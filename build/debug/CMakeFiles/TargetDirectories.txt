@@ -37,3 +37,9 @@
 /localhome/demo/Kastner/GraphMap/build/debug/domains/CMakeFiles/test.dir
 /localhome/demo/Kastner/GraphMap/build/debug/domains/CMakeFiles/edit_cache.dir
 /localhome/demo/Kastner/GraphMap/build/debug/domains/CMakeFiles/rebuild_cache.dir
+/localhome/demo/Kastner/GraphMap/build/debug/domains/Kinect/CMakeFiles/test.dir
+/localhome/demo/Kastner/GraphMap/build/debug/domains/Kinect/CMakeFiles/edit_cache.dir
+/localhome/demo/Kastner/GraphMap/build/debug/domains/Kinect/CMakeFiles/Kinect_doc.dir
+/localhome/demo/Kastner/GraphMap/build/debug/domains/Kinect/CMakeFiles/rebuild_cache.dir
+/localhome/demo/Kastner/GraphMap/build/debug/domains/Kinect/CMakeFiles/KinectGrabber.dir
+/localhome/demo/Kastner/GraphMap/build/debug/domains/Kinect/CMakeFiles/KinectGrabber_dist.dir

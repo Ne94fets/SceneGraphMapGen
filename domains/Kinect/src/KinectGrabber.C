@@ -46,6 +46,13 @@
 
 #include <fw/Unit.h>
 
+#include <exception>
+
+#include <libfreenect2/libfreenect2.hpp>
+#include <libfreenect2/frame_listener_impl.h>
+#include <libfreenect2/registration.h>
+#include <libfreenect2/packet_pipeline.h>
+
 using namespace mira;
 
 namespace kinect { 
@@ -62,6 +69,7 @@ MIRA_OBJECT(KinectGrabber)
 public:
 
 	KinectGrabber();
+	virtual ~KinectGrabber();
 
 	template<typename Reflector>
 	void reflect(Reflector& r)
@@ -84,19 +92,57 @@ private:
 	// void onPoseChanged(ChannelRead<Pose2> pose);
 
 private:
+	Duration	m_pollTime = Duration::milliseconds(100);
+
+	libfreenect2::Freenect2					m_freenect2;
+	libfreenect2::Freenect2Device*			m_dev = nullptr;
+	libfreenect2::PacketPipeline*			m_pipeline = nullptr;
+	//libfreenect2::Registration*				m_registration = nullptr;
+	libfreenect2::SyncMultiFrameListener	m_listener;
+	libfreenect2::FrameMap					m_frames;
+	libfreenect2::Frame						m_undistortedRGB;
+	libfreenect2::Frame						m_registeredDepth;
 
 	//Channel<Img<>> mChannel;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
 
-KinectGrabber::KinectGrabber() : Unit(Duration::milliseconds(100))
+KinectGrabber::KinectGrabber()
+	: Unit(m_pollTime),
+	  m_listener(libfreenect2::Frame::Color |
+				 libfreenect2::Frame::Ir |
+				 libfreenect2::Frame::Depth),
+	  m_undistortedRGB(512, 424, 4),
+	  m_registeredDepth(512, 424, 4)
 {
-	// TODO: further initialization of members, etc.
+	m_pipeline = new libfreenect2::CpuPacketPipeline();
+	if(m_freenect2.enumerateDevices() == 0)
+		throw std::runtime_exception("No Kinect connected!");
+	std::string serial = m_freenect2.getDefaultDeviceSerialNumber();
+	m_dev = m_freenect2.openDevice(serial, m_pipeline);
+	m_dev->setColorFrameListener(&m_listener);
+	m_dev->setIrAndDepthFrameListener(&m_listener);
+}
+
+KinectGrabber::~KinectGrabber()
+{
+	m_dev->stop();
+	m_dev->close();
+	delete m_dev;
+	delete m_pipeline;
 }
 
 void KinectGrabber::initialize()
 {
+	if(!m_dev->start())
+		throw std::runtime_exception("Could not start Kinect");
+	if(!m_dev->startStreams(true, true))
+		throw std::runtime_exception("Could not start Kinect Streams");
+//	m_registration = new libfreenect2::Registration(
+//				m_dev->getIrCameraParams(),
+//				m_dev->getColorCameraParams());
+
 	// TODO: subscribe and publish all required channels
 	//subscribe<Pose2>("Pose", &UnitName::onPoseChanged);
 	//mChannel = publish<Img<>>("Image");
@@ -104,6 +150,16 @@ void KinectGrabber::initialize()
 
 void KinectGrabber::process(const Timer& timer)
 {
+	if(!m_listener.waitForNewFrame(m_frames, m_pollTime.count()))
+		return;
+
+	libfreenect2::Frame* rgb = m_frames[libfreenect2::Frame::Color];
+	//libfreenect2::Frame* ir = frames[libfreenect2::Frame::Ir];
+	libfreenect2::Frame* depth = m_frames[libfreenect2::Frame::Depth];
+
+	//m_registration->apply(rgb, depth, &m_undistortedRGB, &m_registeredDepth);
+
+	m_listener.release(m_frames);
 	// TODO: this method is called periodically with the specified cycle time, so you can perform your computation here.
 }
 

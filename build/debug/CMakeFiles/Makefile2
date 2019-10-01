@@ -95,7 +95,7 @@ clean: CMakeFiles/manifest.dir/clean
 # Target rules for target CMakeFiles/doc.dir
 
 # All Build rule for target.
-CMakeFiles/doc.dir/all:
+CMakeFiles/doc.dir/all: domains/Kinect/CMakeFiles/Kinect_doc.dir/all
 	$(MAKE) -f CMakeFiles/doc.dir/build.make CMakeFiles/doc.dir/depend
 	$(MAKE) -f CMakeFiles/doc.dir/build.make CMakeFiles/doc.dir/build
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/localhome/demo/Kastner/GraphMap/build/debug/CMakeFiles --progress-num= "Built target doc"
@@ -103,7 +103,7 @@ CMakeFiles/doc.dir/all:
 
 # Build rule for subdir invocation for target.
 CMakeFiles/doc.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /localhome/demo/Kastner/GraphMap/build/debug/CMakeFiles 0
+	$(CMAKE_COMMAND) -E cmake_progress_start /localhome/demo/Kastner/GraphMap/build/debug/CMakeFiles 6
 	$(MAKE) -f CMakeFiles/Makefile2 CMakeFiles/doc.dir/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /localhome/demo/Kastner/GraphMap/build/debug/CMakeFiles 0
 .PHONY : CMakeFiles/doc.dir/rule
@@ -1041,19 +1041,146 @@ toolboxes/preinstall:
 # Directory level rules for directory domains
 
 # Convenience name for "all" pass in the directory.
-domains/all:
+domains/all: domains/Kinect/all
 
 .PHONY : domains/all
 
 # Convenience name for "clean" pass in the directory.
-domains/clean:
+domains/clean: domains/Kinect/clean
 
 .PHONY : domains/clean
 
 # Convenience name for "preinstall" pass in the directory.
-domains/preinstall:
+domains/preinstall: domains/Kinect/preinstall
 
 .PHONY : domains/preinstall
+
+#=============================================================================
+# Directory level rules for directory domains/Kinect
+
+# Convenience name for "all" pass in the directory.
+domains/Kinect/all: domains/Kinect/CMakeFiles/KinectGrabber.dir/all
+domains/Kinect/all: domains/Kinect/CMakeFiles/KinectGrabber_dist.dir/all
+
+.PHONY : domains/Kinect/all
+
+# Convenience name for "clean" pass in the directory.
+domains/Kinect/clean: domains/Kinect/CMakeFiles/Kinect_doc.dir/clean
+domains/Kinect/clean: domains/Kinect/CMakeFiles/KinectGrabber.dir/clean
+domains/Kinect/clean: domains/Kinect/CMakeFiles/KinectGrabber_dist.dir/clean
+
+.PHONY : domains/Kinect/clean
+
+# Convenience name for "preinstall" pass in the directory.
+domains/Kinect/preinstall:
+
+.PHONY : domains/Kinect/preinstall
+
+#=============================================================================
+# Target rules for target domains/Kinect/CMakeFiles/Kinect_doc.dir
+
+# All Build rule for target.
+domains/Kinect/CMakeFiles/Kinect_doc.dir/all:
+	$(MAKE) -f domains/Kinect/CMakeFiles/Kinect_doc.dir/build.make domains/Kinect/CMakeFiles/Kinect_doc.dir/depend
+	$(MAKE) -f domains/Kinect/CMakeFiles/Kinect_doc.dir/build.make domains/Kinect/CMakeFiles/Kinect_doc.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/localhome/demo/Kastner/GraphMap/build/debug/CMakeFiles --progress-num=3,4,5,6,7,8 "Built target Kinect_doc"
+.PHONY : domains/Kinect/CMakeFiles/Kinect_doc.dir/all
+
+# Build rule for subdir invocation for target.
+domains/Kinect/CMakeFiles/Kinect_doc.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /localhome/demo/Kastner/GraphMap/build/debug/CMakeFiles 6
+	$(MAKE) -f CMakeFiles/Makefile2 domains/Kinect/CMakeFiles/Kinect_doc.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /localhome/demo/Kastner/GraphMap/build/debug/CMakeFiles 0
+.PHONY : domains/Kinect/CMakeFiles/Kinect_doc.dir/rule
+
+# Convenience name for target.
+Kinect_doc: domains/Kinect/CMakeFiles/Kinect_doc.dir/rule
+
+.PHONY : Kinect_doc
+
+# clean rule for target.
+domains/Kinect/CMakeFiles/Kinect_doc.dir/clean:
+	$(MAKE) -f domains/Kinect/CMakeFiles/Kinect_doc.dir/build.make domains/Kinect/CMakeFiles/Kinect_doc.dir/clean
+.PHONY : domains/Kinect/CMakeFiles/Kinect_doc.dir/clean
+
+# clean rule for target.
+clean: domains/Kinect/CMakeFiles/Kinect_doc.dir/clean
+
+.PHONY : clean
+
+#=============================================================================
+# Target rules for target domains/Kinect/CMakeFiles/KinectGrabber.dir
+
+# All Build rule for target.
+domains/Kinect/CMakeFiles/KinectGrabber.dir/all: domains/Kinect/CMakeFiles/KinectGrabber_dist.dir/all
+	$(MAKE) -f domains/Kinect/CMakeFiles/KinectGrabber.dir/build.make domains/Kinect/CMakeFiles/KinectGrabber.dir/depend
+	$(MAKE) -f domains/Kinect/CMakeFiles/KinectGrabber.dir/build.make domains/Kinect/CMakeFiles/KinectGrabber.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/localhome/demo/Kastner/GraphMap/build/debug/CMakeFiles --progress-num=1,2 "Built target KinectGrabber"
+.PHONY : domains/Kinect/CMakeFiles/KinectGrabber.dir/all
+
+# Include target in all.
+all: domains/Kinect/CMakeFiles/KinectGrabber.dir/all
+
+.PHONY : all
+
+# Build rule for subdir invocation for target.
+domains/Kinect/CMakeFiles/KinectGrabber.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /localhome/demo/Kastner/GraphMap/build/debug/CMakeFiles 2
+	$(MAKE) -f CMakeFiles/Makefile2 domains/Kinect/CMakeFiles/KinectGrabber.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /localhome/demo/Kastner/GraphMap/build/debug/CMakeFiles 0
+.PHONY : domains/Kinect/CMakeFiles/KinectGrabber.dir/rule
+
+# Convenience name for target.
+KinectGrabber: domains/Kinect/CMakeFiles/KinectGrabber.dir/rule
+
+.PHONY : KinectGrabber
+
+# clean rule for target.
+domains/Kinect/CMakeFiles/KinectGrabber.dir/clean:
+	$(MAKE) -f domains/Kinect/CMakeFiles/KinectGrabber.dir/build.make domains/Kinect/CMakeFiles/KinectGrabber.dir/clean
+.PHONY : domains/Kinect/CMakeFiles/KinectGrabber.dir/clean
+
+# clean rule for target.
+clean: domains/Kinect/CMakeFiles/KinectGrabber.dir/clean
+
+.PHONY : clean
+
+#=============================================================================
+# Target rules for target domains/Kinect/CMakeFiles/KinectGrabber_dist.dir
+
+# All Build rule for target.
+domains/Kinect/CMakeFiles/KinectGrabber_dist.dir/all:
+	$(MAKE) -f domains/Kinect/CMakeFiles/KinectGrabber_dist.dir/build.make domains/Kinect/CMakeFiles/KinectGrabber_dist.dir/depend
+	$(MAKE) -f domains/Kinect/CMakeFiles/KinectGrabber_dist.dir/build.make domains/Kinect/CMakeFiles/KinectGrabber_dist.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/localhome/demo/Kastner/GraphMap/build/debug/CMakeFiles --progress-num= "Built target KinectGrabber_dist"
+.PHONY : domains/Kinect/CMakeFiles/KinectGrabber_dist.dir/all
+
+# Include target in all.
+all: domains/Kinect/CMakeFiles/KinectGrabber_dist.dir/all
+
+.PHONY : all
+
+# Build rule for subdir invocation for target.
+domains/Kinect/CMakeFiles/KinectGrabber_dist.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /localhome/demo/Kastner/GraphMap/build/debug/CMakeFiles 0
+	$(MAKE) -f CMakeFiles/Makefile2 domains/Kinect/CMakeFiles/KinectGrabber_dist.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /localhome/demo/Kastner/GraphMap/build/debug/CMakeFiles 0
+.PHONY : domains/Kinect/CMakeFiles/KinectGrabber_dist.dir/rule
+
+# Convenience name for target.
+KinectGrabber_dist: domains/Kinect/CMakeFiles/KinectGrabber_dist.dir/rule
+
+.PHONY : KinectGrabber_dist
+
+# clean rule for target.
+domains/Kinect/CMakeFiles/KinectGrabber_dist.dir/clean:
+	$(MAKE) -f domains/Kinect/CMakeFiles/KinectGrabber_dist.dir/build.make domains/Kinect/CMakeFiles/KinectGrabber_dist.dir/clean
+.PHONY : domains/Kinect/CMakeFiles/KinectGrabber_dist.dir/clean
+
+# clean rule for target.
+clean: domains/Kinect/CMakeFiles/KinectGrabber_dist.dir/clean
+
+.PHONY : clean
 
 #=============================================================================
 # Special targets to cleanup operation of make.

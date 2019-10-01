@@ -1,4 +1,9 @@
 # Hashes of file build rules.
+1f6f82f1426915642101e74e3bbd384c ../../doc/domains/Kinect/AppDesignerSmall.png
+c8dccc171e1c91ee043bac2a0fdb9d3d ../../doc/domains/Kinect/DeveloperSmall.png
+7fc17e33db4a8a45f26461f453511288 ../../doc/domains/Kinect/EndUserSmall.png
+538f122bc8fdb1efbdff94d5a7a6590f ../../doc/domains/Kinect/MiraStyle.css
+2687b90cd453741e4851808f4b0fc2f5 ../../doc/domains/Kinect/attention.png
 83ea7abaafc16d958cb03e692ccccb00 CMakeFiles/Continuous
 79d0a212a7efc77ac46ac7783a522027 CMakeFiles/ContinuousBuild
 c05cfc3349432e3d2828611c603191d1 CMakeFiles/ContinuousConfigure
@@ -28,3 +33,4 @@ a18f1e7474d92baa2f0239b9fc0c2fd8 CMakeFiles/NightlySubmit
 c582a58b84551179b581a66b5f840def CMakeFiles/NightlyTest
 8fa8a0468307b87bb12eefb5ee2109f6 CMakeFiles/NightlyUpdate
 5e5505fce72e29c651d742c65616e74c CMakeFiles/doc
+2888e49dd00ea8842079b92b8336a8fa domains/Kinect/CMakeFiles/Kinect_doc

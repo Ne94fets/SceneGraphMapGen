@@ -1,0 +1,1 @@
+This domain uses the Kinect to do grab RGB and depth images

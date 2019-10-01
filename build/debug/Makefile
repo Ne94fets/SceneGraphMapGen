@@ -511,6 +511,45 @@ ContinuousUpdate/fast:
 	$(MAKE) -f CMakeFiles/ContinuousUpdate.dir/build.make CMakeFiles/ContinuousUpdate.dir/build
 .PHONY : ContinuousUpdate/fast
 
+#=============================================================================
+# Target rules for targets named Kinect_doc
+
+# Build rule for target.
+Kinect_doc: cmake_check_build_system
+	$(MAKE) -f CMakeFiles/Makefile2 Kinect_doc
+.PHONY : Kinect_doc
+
+# fast build rule for target.
+Kinect_doc/fast:
+	$(MAKE) -f domains/Kinect/CMakeFiles/Kinect_doc.dir/build.make domains/Kinect/CMakeFiles/Kinect_doc.dir/build
+.PHONY : Kinect_doc/fast
+
+#=============================================================================
+# Target rules for targets named KinectGrabber
+
+# Build rule for target.
+KinectGrabber: cmake_check_build_system
+	$(MAKE) -f CMakeFiles/Makefile2 KinectGrabber
+.PHONY : KinectGrabber
+
+# fast build rule for target.
+KinectGrabber/fast:
+	$(MAKE) -f domains/Kinect/CMakeFiles/KinectGrabber.dir/build.make domains/Kinect/CMakeFiles/KinectGrabber.dir/build
+.PHONY : KinectGrabber/fast
+
+#=============================================================================
+# Target rules for targets named KinectGrabber_dist
+
+# Build rule for target.
+KinectGrabber_dist: cmake_check_build_system
+	$(MAKE) -f CMakeFiles/Makefile2 KinectGrabber_dist
+.PHONY : KinectGrabber_dist
+
+# fast build rule for target.
+KinectGrabber_dist/fast:
+	$(MAKE) -f domains/Kinect/CMakeFiles/KinectGrabber_dist.dir/build.make domains/Kinect/CMakeFiles/KinectGrabber_dist.dir/build
+.PHONY : KinectGrabber_dist/fast
+
 # Help Target
 help:
 	@echo "The following are some of the valid targets for this Makefile:"
@@ -550,6 +589,9 @@ help:
 	@echo "... ExperimentalSubmit"
 	@echo "... ContinuousStart"
 	@echo "... ContinuousUpdate"
+	@echo "... Kinect_doc"
+	@echo "... KinectGrabber"
+	@echo "... KinectGrabber_dist"
 .PHONY : help
 
 

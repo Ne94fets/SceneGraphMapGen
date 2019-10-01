@@ -307,6 +307,9 @@ GraphMap_SOURCE_DIR:STATIC=/localhome/demo/Kastner/GraphMap
 //Path to a program.
 HGCOMMAND:FILEPATH=HGCOMMAND-NOTFOUND
 
+//Dependencies for the target
+KinectGrabber_LIB_DEPENDS:STATIC=general;MIRABase;general;MIRAFramework;general;/usr/lib/x86_64-linux-gnu/libboost_date_time.so;general;/usr/lib/x86_64-linux-gnu/libboost_thread.so;general;/usr/lib/x86_64-linux-gnu/libboost_system.so;general;/usr/lib/x86_64-linux-gnu/libboost_filesystem.so;general;/usr/lib/x86_64-linux-gnu/libboost_regex.so;general;/usr/lib/x86_64-linux-gnu/libboost_program_options.so;general;/usr/lib/x86_64-linux-gnu/libboost_iostreams.so;general;xml2;general;ssl;general;crypto;general;z;general;-lpthread;general;opencv_imgproc;general;opencv_dnn;general;opencv_shape;general;opencv_ml;general;opencv_core;general;opencv_videoio;general;opencv_videostab;general;opencv_video;general;opencv_highgui;general;opencv_objdetect;general;opencv_stitching;general;opencv_calib3d;general;opencv_features2d;general;opencv_superres;general;opencv_photo;general;opencv_flann;general;opencv_imgcodecs;general;sqlite3;general;/usr/lib/x86_64-linux-gnu/libiberty.a;general;/usr/lib/x86_64-linux-gnu/libbfd.so;general;/usr/lib/x86_64-linux-gnu/libiberty.a;general;dl;general;MIRABase;general;libfreenect2.so;
+
 //Path to a library.
 LIBBFD_PATH:FILEPATH=/usr/lib/x86_64-linux-gnu/libbfd.so
 
@@ -512,7 +515,7 @@ CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: CMAKE_NM
 CMAKE_NM-ADVANCED:INTERNAL=1
 //number of local generators
-CMAKE_NUMBER_OF_MAKEFILES:INTERNAL=3
+CMAKE_NUMBER_OF_MAKEFILES:INTERNAL=4
 //ADVANCED property for variable: CMAKE_OBJCOPY
 CMAKE_OBJCOPY-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: CMAKE_OBJDUMP
@@ -581,6 +584,15 @@ FIND_PACKAGE_MESSAGE_DETAILS_Threads:INTERNAL=[TRUE][v()]
 GITCOMMAND-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: HGCOMMAND
 HGCOMMAND-ADVANCED:INTERNAL=1
+KinectGrabber_AUTOLINKLIBS:INTERNAL=/usr/lib/x86_64-linux-gnu/libboost_date_time.so;/usr/lib/x86_64-linux-gnu/libboost_thread.so;/usr/lib/x86_64-linux-gnu/libboost_system.so;/usr/lib/x86_64-linux-gnu/libboost_filesystem.so;/usr/lib/x86_64-linux-gnu/libboost_regex.so;/usr/lib/x86_64-linux-gnu/libboost_program_options.so;/usr/lib/x86_64-linux-gnu/libboost_iostreams.so;xml2;ssl;crypto;z;-lpthread;opencv_imgproc;opencv_dnn;opencv_shape;opencv_ml;opencv_core;opencv_videoio;opencv_videostab;opencv_video;opencv_highgui;opencv_objdetect;opencv_stitching;opencv_calib3d;opencv_features2d;opencv_superres;opencv_photo;opencv_flann;opencv_imgcodecs;sqlite3;/usr/lib/x86_64-linux-gnu/libiberty.a;/usr/lib/x86_64-linux-gnu/libbfd.so;/usr/lib/x86_64-linux-gnu/libiberty.a;dl;MIRABase
+Kinect_APIVERSION:INTERNAL=0.1
+Kinect_COMPONENTS:INTERNAL=Kinect
+Kinect_MAJOR:INTERNAL=0
+Kinect_MINOR:INTERNAL=1
+Kinect_PATCH:INTERNAL=1
+Kinect_REQUIREMENTS:INTERNAL=MIRAFramework
+Kinect_TAGS:INTERNAL=Image, Video, RGB, Depth, Kinect
+Kinect_VERSION:INTERNAL=0.1.1
 LIBXML2_CFLAGS:INTERNAL=-I/usr/include/libxml2
 LIBXML2_CFLAGS_I:INTERNAL=
 LIBXML2_CFLAGS_OTHER:INTERNAL=
@@ -621,6 +633,30 @@ MAKECOMMAND-ADVANCED:INTERNAL=1
 MEMORYCHECK_COMMAND-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: MEMORYCHECK_SUPPRESSIONS_FILE
 MEMORYCHECK_SUPPRESSIONS_FILE-ADVANCED:INTERNAL=1
+MIRABase_APIVERSION:INTERNAL=0.40
+MIRABase_COMPONENTS:INTERNAL=MIRABase
+MIRABase_MAJOR:INTERNAL=0
+MIRABase_MINOR:INTERNAL=40
+MIRABase_PATCH:INTERNAL=0
+MIRABase_REQUIREMENTS:INTERNAL=MIRAenvironment;external
+MIRABase_TAGS:INTERNAL=base;communication;database;error;factory;geometry;image;json;math;platform;rpc;security;serialization;stream;thread;transform;utils;xml
+MIRABase_VERSION:INTERNAL=0.40.0
+MIRAFramework_APIVERSION:INTERNAL=0.39
+MIRAFramework_COMPONENTS:INTERNAL=MIRAFramework
+MIRAFramework_MAJOR:INTERNAL=0
+MIRAFramework_MINOR:INTERNAL=39
+MIRAFramework_PATCH:INTERNAL=0
+MIRAFramework_REQUIREMENTS:INTERNAL=MIRABase;MIRAenvironment;external
+MIRAFramework_TAGS:INTERNAL=framework;communication;remote;rpc;channel;unit;error;transform
+MIRAFramework_VERSION:INTERNAL=0.39.0
+MIRA_INTERNAL_PACKAGE_LIST:INTERNAL=Kinect;MIRAFramework;MIRABase;MIRAenvironment;external
+MIRAenvironment_APIVERSION:INTERNAL=0.20
+MIRAenvironment_COMPONENTS:INTERNAL=MIRAenvironment
+MIRAenvironment_MAJOR:INTERNAL=0
+MIRAenvironment_MINOR:INTERNAL=20
+MIRAenvironment_PATCH:INTERNAL=1
+MIRAenvironment_TAGS:INTERNAL=mira;make;cmake
+MIRAenvironment_VERSION:INTERNAL=0.20.1
 OPENSSL_CFLAGS:INTERNAL=
 OPENSSL_CFLAGS_I:INTERNAL=
 OPENSSL_CFLAGS_OTHER:INTERNAL=
@@ -683,5 +719,11 @@ _Boost_NAMESPACE_LAST:INTERNAL=boost
 _Boost_USE_MULTITHREADED_LAST:INTERNAL=TRUE
 __pkg_config_checked_LIBXML2:INTERNAL=1
 __pkg_config_checked_OPENSSL:INTERNAL=1
+external_APIVERSION:INTERNAL=0.14
+external_COMPONENTS:INTERNAL=external
+external_MAJOR:INTERNAL=0
+external_MINOR:INTERNAL=14
+external_PATCH:INTERNAL=2
+external_VERSION:INTERNAL=0.14.2
 prefix_result:INTERNAL=/usr/lib/x86_64-linux-gnu
 

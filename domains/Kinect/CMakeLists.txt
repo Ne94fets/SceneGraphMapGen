@@ -27,3 +27,5 @@ MIRA_ADD_LIBRARY(KinectGrabber
 		MIRABase
 		MIRAFramework
 )
+
+target_link_libraries(KinectGrabber libfreenect2.so)
