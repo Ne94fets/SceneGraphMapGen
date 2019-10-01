@@ -1,0 +1,45 @@
+/*
+Doxygen will generate the main page of the documentation
+from this file.
+*/
+/**
+\mainpage Domain Kinect - Documentation
+
+This domain uses the Kinect to do grab RGB and depth images
+
+\section MyUnit
+
+TODO: add documentation
+
+\subsection Channels
+\subsubsection Subscribed
+
+- \channel{ChannelName,mira::robot::DataType}
+  TODO: add documentation
+
+\subsubsection Published
+
+
+\subsection Transforms
+
+- \transf{Pose}
+  TODO: add documentation
+
+\subsection Services
+
+\subsubsection Required
+
+- \service{IInterfaceName}
+      void methodName(int,float);
+
+\subsubsection Published
+
+
+\subsection Parameters
+- \member{MyParameter, std::string}
+   TODO: add documentation
+   
+- \property{MyProperty, bool} 
+   TODO: add documentation
+
+*/

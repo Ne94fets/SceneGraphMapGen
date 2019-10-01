@@ -1,0 +1,12 @@
+##############################################################################
+# Please use build.bat to compile on Windows!
+##############################################################################
+
+TOP_DIR=$(MAKEDIR)
+
+!IF !DEFINED(MIRA_ROOT_DIR)
+!ERROR MIRA_ROOT_DIR is undefined. Did you use build.bat?
+!ENDIF
+
+MIRA_MAKE_DIR=$(MIRA_ROOT_DIR)/make
+!INCLUDE $(MIRA_ROOT_DIR)/make/Insource.nmake

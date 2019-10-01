@@ -1,0 +1,7 @@
+<root>
+
+	<unit id="KinectGrabber" class="kinect::KinectGrabber">
+		<!-- add your default parameters here-->
+	</unit>
+
+</root>
