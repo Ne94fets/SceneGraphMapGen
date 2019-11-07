@@ -97,13 +97,14 @@ private:
 	libfreenect2::Freenect2					m_freenect2;
 	libfreenect2::Freenect2Device*			m_dev = nullptr;
 	libfreenect2::PacketPipeline*			m_pipeline = nullptr;
-	//libfreenect2::Registration*				m_registration = nullptr;
+	libfreenect2::Registration*				m_registration = nullptr;
 	libfreenect2::SyncMultiFrameListener	m_listener;
 	libfreenect2::FrameMap					m_frames;
 	libfreenect2::Frame						m_undistortedRGB;
 	libfreenect2::Frame						m_registeredDepth;
 
-	//Channel<Img<>> mChannel;
+	Channel<Img<>> m_channelRGB;
+	Channel<Img<>> m_channelDepth;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -117,18 +118,28 @@ KinectGrabber::KinectGrabber()
 	  m_registeredDepth(512, 424, 4)
 {
 	m_pipeline = new libfreenect2::CpuPacketPipeline();
+
 	if(m_freenect2.enumerateDevices() == 0)
 		throw std::runtime_exception("No Kinect connected!");
+
 	std::string serial = m_freenect2.getDefaultDeviceSerialNumber();
 	m_dev = m_freenect2.openDevice(serial, m_pipeline);
+
 	m_dev->setColorFrameListener(&m_listener);
 	m_dev->setIrAndDepthFrameListener(&m_listener);
+
+	std::cout << "Kinect serial: " << m_dev->getSerialNumber() << std::endl;
+	std::cout << "Kinect firmware: " << m_dev->getFirmwareVersion() << std::endl;
+
+	m_registration = new libfreenect2::Registration(m_dev->getIrCameraParams(),
+													m_dev->getColorCameraParams());
 }
 
 KinectGrabber::~KinectGrabber()
 {
 	m_dev->stop();
 	m_dev->close();
+	delete m_registration;
 	delete m_dev;
 	delete m_pipeline;
 }
@@ -145,7 +156,8 @@ void KinectGrabber::initialize()
 
 	// TODO: subscribe and publish all required channels
 	//subscribe<Pose2>("Pose", &UnitName::onPoseChanged);
-	//mChannel = publish<Img<>>("Image");
+	m_channelRGB = publish<Img<>>("RGBImage");
+	m_channelDepth = publish<Img>>("DepthImage");
 }
 
 void KinectGrabber::process(const Timer& timer)
@@ -157,7 +169,10 @@ void KinectGrabber::process(const Timer& timer)
 	//libfreenect2::Frame* ir = frames[libfreenect2::Frame::Ir];
 	libfreenect2::Frame* depth = m_frames[libfreenect2::Frame::Depth];
 
-	//m_registration->apply(rgb, depth, &m_undistortedRGB, &m_registeredDepth);
+	m_registration->apply(rgb, depth, &m_undistortedRGB, &m_registeredDepth);
+
+	Img8U1 depthImg(m_registeredDepth.width, m_registeredDepth.height);
+	depthImg.
 
 	m_listener.release(m_frames);
 	// TODO: this method is called periodically with the specified cycle time, so you can perform your computation here.
