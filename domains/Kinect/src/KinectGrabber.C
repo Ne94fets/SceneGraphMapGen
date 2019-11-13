@@ -45,6 +45,7 @@
  */
 
 #include <fw/Unit.h>
+#include <image/Img.h>
 
 #include <exception>
 
@@ -103,8 +104,11 @@ private:
 	libfreenect2::Frame						m_undistortedRGB;
 	libfreenect2::Frame						m_registeredDepth;
 
-	Channel<Img<>> m_channelRGB;
-	Channel<Img<>> m_channelDepth;
+	typedef Img<uint8_t, 4> RGBImgType;
+	typedef Img<uint8_t, 1> DepthImgType;
+
+	Channel<RGBImgType> m_channelRGB;
+	Channel<DepthImgType> m_channelDepth;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -120,7 +124,7 @@ KinectGrabber::KinectGrabber()
 	m_pipeline = new libfreenect2::CpuPacketPipeline();
 
 	if(m_freenect2.enumerateDevices() == 0)
-		throw std::runtime_exception("No Kinect connected!");
+		throw std::runtime_error("No Kinect connected!");
 
 	std::string serial = m_freenect2.getDefaultDeviceSerialNumber();
 	m_dev = m_freenect2.openDevice(serial, m_pipeline);
@@ -147,22 +151,22 @@ KinectGrabber::~KinectGrabber()
 void KinectGrabber::initialize()
 {
 	if(!m_dev->start())
-		throw std::runtime_exception("Could not start Kinect");
+		throw std::runtime_error("Could not start Kinect");
 	if(!m_dev->startStreams(true, true))
-		throw std::runtime_exception("Could not start Kinect Streams");
+		throw std::runtime_error("Could not start Kinect Streams");
 //	m_registration = new libfreenect2::Registration(
 //				m_dev->getIrCameraParams(),
 //				m_dev->getColorCameraParams());
 
 	// TODO: subscribe and publish all required channels
 	//subscribe<Pose2>("Pose", &UnitName::onPoseChanged);
-	m_channelRGB = publish<Img<>>("RGBImage");
-	m_channelDepth = publish<Img>>("DepthImage");
+	m_channelRGB = publish<RGBImgType>("RGBImage");
+	m_channelDepth = publish<DepthImgType>("DepthImage");
 }
 
 void KinectGrabber::process(const Timer& timer)
 {
-	if(!m_listener.waitForNewFrame(m_frames, m_pollTime.count()))
+	if(!m_listener.waitForNewFrame(m_frames, m_pollTime.totalMilliseconds()))
 		return;
 
 	libfreenect2::Frame* rgb = m_frames[libfreenect2::Frame::Color];
@@ -171,10 +175,21 @@ void KinectGrabber::process(const Timer& timer)
 
 	m_registration->apply(rgb, depth, &m_undistortedRGB, &m_registeredDepth);
 
-	Img8U1 depthImg(m_registeredDepth.width, m_registeredDepth.height);
-	depthImg.
-
+	cv::Mat regDepthRaw(m_registeredDepth.height, m_registeredDepth.width, CV_8UC4);
+	regDepthRaw.data = m_registeredDepth.data;
+	cv::Mat regDepthChannel[4];
+	cv::split(regDepthRaw, regDepthChannel);
+	Img<uint8_t, 1> depthOut;
+	cv::flip(regDepthChannel[2], depthOut, 1);
 	m_listener.release(m_frames);
+
+	m_channelDepth.post(depthOut);
+	
+	cv::Mat undistColorRaw(m_undistortedRGB.height, m_undistortedRGB.width, CV_8UC4);
+	undistColorRaw.data = m_undistortedRGB.data;
+	Img<uint8_t, 4> undistOut;
+	cv::flip(undistColorRaw, undistOut, 1);
+	m_channelRGB.post(undistOut);
 	// TODO: this method is called periodically with the specified cycle time, so you can perform your computation here.
 }
 
