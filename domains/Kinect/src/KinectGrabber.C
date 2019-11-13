@@ -44,6 +44,8 @@
  * @date   2019/10/01
  */
 
+#define OPENCV_TRAITS_ENABLE_DEPRECATED
+
 #include <fw/Unit.h>
 #include <image/Img.h>
 
@@ -53,6 +55,8 @@
 #include <libfreenect2/frame_listener_impl.h>
 #include <libfreenect2/registration.h>
 #include <libfreenect2/packet_pipeline.h>
+
+#include <opencv2/imgproc.hpp>
 
 using namespace mira;
 
@@ -97,14 +101,13 @@ private:
 
 	libfreenect2::Freenect2					m_freenect2;
 	libfreenect2::Freenect2Device*			m_dev = nullptr;
-	libfreenect2::PacketPipeline*			m_pipeline = nullptr;
 	libfreenect2::Registration*				m_registration = nullptr;
 	libfreenect2::SyncMultiFrameListener	m_listener;
 	libfreenect2::FrameMap					m_frames;
-	libfreenect2::Frame						m_undistortedRGB;
-	libfreenect2::Frame						m_registeredDepth;
+	libfreenect2::Frame						m_undistortedDepth;
+	libfreenect2::Frame						m_registeredRGB;
 
-	typedef Img<uint8_t, 4> RGBImgType;
+	typedef Img<uint8_t, 3> RGBImgType;
 	typedef Img<uint8_t, 1> DepthImgType;
 
 	Channel<RGBImgType> m_channelRGB;
@@ -118,16 +121,18 @@ KinectGrabber::KinectGrabber()
 	  m_listener(libfreenect2::Frame::Color |
 				 libfreenect2::Frame::Ir |
 				 libfreenect2::Frame::Depth),
-	  m_undistortedRGB(512, 424, 4),
-	  m_registeredDepth(512, 424, 4)
+	  m_undistortedDepth(512, 424, 4),
+	  m_registeredRGB(512, 424, 4)
 {
-	m_pipeline = new libfreenect2::CpuPacketPipeline();
+//	m_pipeline = new libfreenect2::CpuPacketPipeline();
+//	if(!m_pipeline)
+//		throw std::runtime_error("Could not create cpu packet pipeline");
 
 	if(m_freenect2.enumerateDevices() == 0)
 		throw std::runtime_error("No Kinect connected!");
 
 	std::string serial = m_freenect2.getDefaultDeviceSerialNumber();
-	m_dev = m_freenect2.openDevice(serial, m_pipeline);
+	m_dev = m_freenect2.openDevice(serial);
 
 	m_dev->setColorFrameListener(&m_listener);
 	m_dev->setIrAndDepthFrameListener(&m_listener);
@@ -145,18 +150,14 @@ KinectGrabber::~KinectGrabber()
 	m_dev->close();
 	delete m_registration;
 	delete m_dev;
-	delete m_pipeline;
+	// will be deleted by device
+	//delete m_pipeline;
 }
 
 void KinectGrabber::initialize()
 {
 	if(!m_dev->start())
 		throw std::runtime_error("Could not start Kinect");
-	if(!m_dev->startStreams(true, true))
-		throw std::runtime_error("Could not start Kinect Streams");
-//	m_registration = new libfreenect2::Registration(
-//				m_dev->getIrCameraParams(),
-//				m_dev->getColorCameraParams());
 
 	// TODO: subscribe and publish all required channels
 	//subscribe<Pose2>("Pose", &UnitName::onPoseChanged);
@@ -173,24 +174,28 @@ void KinectGrabber::process(const Timer& timer)
 	//libfreenect2::Frame* ir = frames[libfreenect2::Frame::Ir];
 	libfreenect2::Frame* depth = m_frames[libfreenect2::Frame::Depth];
 
-	m_registration->apply(rgb, depth, &m_undistortedRGB, &m_registeredDepth);
+	m_registration->apply(rgb, depth, &m_undistortedDepth, &m_registeredRGB);
 
-	cv::Mat regDepthRaw(m_registeredDepth.height, m_registeredDepth.width, CV_8UC4);
-	regDepthRaw.data = m_registeredDepth.data;
+	cv::Mat depthRaw(m_undistortedDepth.height, m_undistortedDepth.width, CV_8SC4);
+	depthRaw.data = m_undistortedDepth.data;
 	cv::Mat regDepthChannel[4];
-	cv::split(regDepthRaw, regDepthChannel);
-	Img<uint8_t, 1> depthOut;
-	cv::flip(regDepthChannel[2], depthOut, 1);
-	m_listener.release(m_frames);
+	cv::split(depthRaw, regDepthChannel);
+	cv::Mat tmp;
+	cv::flip(regDepthChannel[2], tmp, 1);
+	DepthImgType depthOut;
+	tmp.convertTo(depthOut, CV_8UC1, 1, 128);
 
 	m_channelDepth.post(depthOut);
-	
-	cv::Mat undistColorRaw(m_undistortedRGB.height, m_undistortedRGB.width, CV_8UC4);
-	undistColorRaw.data = m_undistortedRGB.data;
-	Img<uint8_t, 4> undistOut;
-	cv::flip(undistColorRaw, undistOut, 1);
-	m_channelRGB.post(undistOut);
-	// TODO: this method is called periodically with the specified cycle time, so you can perform your computation here.
+
+	cv::Mat colorRaw(m_registeredRGB.height, m_registeredRGB.width, CV_8UC4);
+	colorRaw.data = m_registeredRGB.data;
+	RGBImgType colorOut;
+	cv::cvtColor(colorRaw, tmp, CV_BGRA2BGR);
+	cv::flip(tmp, colorOut, 1);
+
+	m_channelRGB.post(colorOut);
+
+	m_listener.release(m_frames);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
