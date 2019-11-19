@@ -176,24 +176,30 @@ void KinectGrabber::process(const Timer& timer)
 
 	m_registration->apply(rgb, depth, &m_undistortedDepth, &m_registeredRGB);
 
+	cv::Mat colorRaw(m_registeredRGB.height, m_registeredRGB.width, CV_8UC4);
+	colorRaw.data = m_registeredRGB.data;
+	RGBImgType colorOut;
+	cv::Mat tmp(colorRaw.rows, colorRaw.cols, CV_8UC3);
+	uchar* dataOut = tmp.data;
+	for(const uchar* data = colorRaw.data; data < colorRaw.dataend; data+=4) {
+		dataOut[0] = data[0];
+		dataOut[1] = data[1];
+		dataOut[2] = data[2];
+	}
+	//cv::cvtColor(colorRaw, tmp, CV_BGRA2BGR);
+	cv::flip(tmp, colorOut, 1);
+
+	m_channelRGB.post(colorOut);
+
 	cv::Mat depthRaw(m_undistortedDepth.height, m_undistortedDepth.width, CV_8SC4);
 	depthRaw.data = m_undistortedDepth.data;
 	cv::Mat regDepthChannel[4];
 	cv::split(depthRaw, regDepthChannel);
-	cv::Mat tmp;
 	cv::flip(regDepthChannel[2], tmp, 1);
 	DepthImgType depthOut;
 	tmp.convertTo(depthOut, CV_8UC1, 1, 128);
 
 	m_channelDepth.post(depthOut);
-
-	cv::Mat colorRaw(m_registeredRGB.height, m_registeredRGB.width, CV_8UC4);
-	colorRaw.data = m_registeredRGB.data;
-	RGBImgType colorOut;
-	cv::cvtColor(colorRaw, tmp, CV_BGRA2BGR);
-	cv::flip(tmp, colorOut, 1);
-
-	m_channelRGB.post(colorOut);
 
 	m_listener.release(m_frames);
 }
