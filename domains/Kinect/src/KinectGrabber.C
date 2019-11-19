@@ -110,8 +110,10 @@ private:
 	typedef Img<uint8_t, 3> RGBImgType;
 	typedef Img<uint8_t, 1> DepthImgType;
 
-	Channel<RGBImgType> m_channelRGB;
-	Channel<DepthImgType> m_channelDepth;
+	RGBImgType		m_rgbImage;
+	DepthImgType	m_depthImg;
+	Channel<RGBImgType>		m_channelRGB;
+	Channel<DepthImgType>	m_channelDepth;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -122,7 +124,9 @@ KinectGrabber::KinectGrabber()
 				 libfreenect2::Frame::Ir |
 				 libfreenect2::Frame::Depth),
 	  m_undistortedDepth(512, 424, 4),
-	  m_registeredRGB(512, 424, 4)
+	  m_registeredRGB(512, 424, 4),
+	  m_rgbImage(515, 424),
+	  m_depthImg(512, 424)
 {
 //	m_pipeline = new libfreenect2::CpuPacketPipeline();
 //	if(!m_pipeline)
@@ -136,22 +140,17 @@ KinectGrabber::KinectGrabber()
 
 	m_dev->setColorFrameListener(&m_listener);
 	m_dev->setIrAndDepthFrameListener(&m_listener);
-
-	std::cout << "Kinect serial: " << m_dev->getSerialNumber() << std::endl;
-	std::cout << "Kinect firmware: " << m_dev->getFirmwareVersion() << std::endl;
-
-	m_registration = new libfreenect2::Registration(m_dev->getIrCameraParams(),
-													m_dev->getColorCameraParams());
 }
 
 KinectGrabber::~KinectGrabber()
 {
 	m_dev->stop();
 	m_dev->close();
-	delete m_registration;
+
+	if(m_registration)
+		delete m_registration;
+
 	delete m_dev;
-	// will be deleted by device
-	//delete m_pipeline;
 }
 
 void KinectGrabber::initialize()
@@ -159,10 +158,22 @@ void KinectGrabber::initialize()
 	if(!m_dev->start())
 		throw std::runtime_error("Could not start Kinect");
 
+	std::cout << "Kinect serial: " << m_dev->getSerialNumber() << std::endl;
+	std::cout << "Kinect firmware: " << m_dev->getFirmwareVersion() << std::endl;
+
+	m_registration = new libfreenect2::Registration(m_dev->getIrCameraParams(),
+													m_dev->getColorCameraParams());
+
 	// TODO: subscribe and publish all required channels
 	//subscribe<Pose2>("Pose", &UnitName::onPoseChanged);
 	m_channelRGB = publish<RGBImgType>("RGBImage");
 	m_channelDepth = publish<DepthImgType>("DepthImage");
+	for(auto dataIter = m_rgbImage.begin(); dataIter != m_rgbImage.end(); ++dataIter) {
+		auto data = *dataIter;
+		data[0] = 0;
+		data[1] = 0;
+		data[2] = 255;
+	}
 }
 
 void KinectGrabber::process(const Timer& timer)
@@ -178,28 +189,27 @@ void KinectGrabber::process(const Timer& timer)
 
 	cv::Mat colorRaw(m_registeredRGB.height, m_registeredRGB.width, CV_8UC4);
 	colorRaw.data = m_registeredRGB.data;
-	RGBImgType colorOut;
 	cv::Mat tmp(colorRaw.rows, colorRaw.cols, CV_8UC3);
 	uchar* dataOut = tmp.data;
 	for(const uchar* data = colorRaw.data; data < colorRaw.dataend; data+=4) {
 		dataOut[0] = data[0];
 		dataOut[1] = data[1];
-		dataOut[2] = data[2];
+		dataOut[2] = 255;
+		dataOut += 3;
 	}
 	//cv::cvtColor(colorRaw, tmp, CV_BGRA2BGR);
-	cv::flip(tmp, colorOut, 1);
+	//cv::flip(tmp, m_rgbImage, 1);
 
-	m_channelRGB.post(colorOut);
+	m_channelRGB.post(m_rgbImage);
 
 	cv::Mat depthRaw(m_undistortedDepth.height, m_undistortedDepth.width, CV_8SC4);
 	depthRaw.data = m_undistortedDepth.data;
 	cv::Mat regDepthChannel[4];
 	cv::split(depthRaw, regDepthChannel);
 	cv::flip(regDepthChannel[2], tmp, 1);
-	DepthImgType depthOut;
-	tmp.convertTo(depthOut, CV_8UC1, 1, 128);
+	tmp.convertTo(m_depthImg, CV_8UC1, 1, 128);
 
-	m_channelDepth.post(depthOut);
+	m_channelDepth.post(m_depthImg);
 
 	m_listener.release(m_frames);
 }
