@@ -200,7 +200,8 @@ void KinectGrabber::process(const Timer& timer)
 	//cv::cvtColor(colorRaw, tmp, CV_BGRA2BGR);
 	//cv::flip(tmp, m_rgbImage, 1);
 
-	m_channelRGB.post(m_rgbImage);
+	ChannelWrite<RGBImgType> wRGB = m_channelRGB.write();
+	wRGB->value() = m_rgbImage;
 
 	cv::Mat depthRaw(m_undistortedDepth.height, m_undistortedDepth.width, CV_8SC4);
 	depthRaw.data = m_undistortedDepth.data;
@@ -209,7 +210,8 @@ void KinectGrabber::process(const Timer& timer)
 	cv::flip(regDepthChannel[2], tmp, 1);
 	tmp.convertTo(m_depthImg, CV_8UC1, 1, 128);
 
-	m_channelDepth.post(m_depthImg);
+	ChannelWrite<DepthImgType> wDepth = m_channelDepth.write();
+	wDepth->value() = m_depthImg;
 
 	m_listener.release(m_frames);
 }
