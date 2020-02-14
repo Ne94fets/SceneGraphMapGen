@@ -79,7 +79,7 @@ public:
 	template<typename Reflector>
 	void reflect(Reflector& r)
 	{
-		Unit::reflect(r);
+		MIRA_REFLECT_BASE(r, Unit);
 
 		// TODO: reflect all parameters (members and properties) that specify the persistent state of the unit
 		//r.property("Param1", mParam1, "First parameter of this unit with default value", 123.4f);

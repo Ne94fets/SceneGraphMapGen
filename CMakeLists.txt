@@ -9,12 +9,9 @@ project(GraphMap)
 set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-### needed by Qt
-set(ENV{MIRA_PATH} "/opt/MIRA:/opt/MIRA-commercial:/localhome/demo/MIRA-fhws://localhome/demo/FHWSApplicationPython:/localhome/demo/fiwi-roboter_apps:/localhome/demo/demo:/localhome/demo/Software/fiwi-roboter_apps/fiwi-pathfinder:/localhome/demo/Kastner/GraphMap")
-
 ### libfreenect2
-INCLUDE_DIRECTORIES("/localhome/demo/freenect2/include")
-LINK_DIRECTORIES("/localhome/demo/freenect2/lib/")
+INCLUDE_DIRECTORIES("/mnt/hdd/steffen/git/libfreenect2/include/")
+LINK_DIRECTORIES("/mnt/hdd/steffen/git/libfreenect2/lib/")
 
 ##############################################################################
 

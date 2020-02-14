@@ -29,3 +29,29 @@ MIRA_ADD_LIBRARY(KinectGrabber
 )
 
 target_link_libraries(KinectGrabber libfreenect2.so)
+
+###############################################################################
+
+MIRA_ADD_LIBRARY(FloatProducer
+	SHARED
+	PACKAGE Kinect
+	SOURCE
+		src/FloatProducer.C
+
+	LINK_LIBS
+		MIRABase
+		MIRAFramework
+)
+
+###############################################################################
+
+MIRA_ADD_LIBRARY(FloatConsumer
+	SHARED
+	PACKAGE Kinect
+	SOURCE
+		src/FloatConsumer.C
+
+	LINK_LIBS
+		MIRABase
+		MIRAFramework
+)
