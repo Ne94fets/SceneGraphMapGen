@@ -1,0 +1,7 @@
+<root>
+
+	<unit id="FloatProducer" class="tutorials::FloatProducer">
+		<!-- add your default parameters here-->
+	</unit>
+
+</root>
