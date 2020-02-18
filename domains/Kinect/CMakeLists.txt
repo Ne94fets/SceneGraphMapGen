@@ -55,3 +55,16 @@ MIRA_ADD_LIBRARY(FloatConsumer
 		MIRABase
 		MIRAFramework
 )
+
+###############################################################################
+
+MIRA_ADD_LIBRARY(DummyKinectSubscriber
+	SHARED
+	PACKAGE Kinect
+	SOURCE
+		src/DummyKinectSubscriber.C
+
+	LINK_LIBS
+		MIRABase
+		MIRAFramework
+)
