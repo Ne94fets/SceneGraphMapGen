@@ -97,8 +97,6 @@ private:
 	// void onPoseChanged(ChannelRead<Pose2> pose);
 
 private:
-	Duration	m_pollTime = Duration::milliseconds(100);
-
 	libfreenect2::Freenect2					m_freenect2;
 	libfreenect2::Freenect2Device*			m_dev = nullptr;
 	libfreenect2::Registration*				m_registration = nullptr;
@@ -119,7 +117,7 @@ private:
 ///////////////////////////////////////////////////////////////////////////////
 
 KinectGrabber::KinectGrabber()
-	: Unit(m_pollTime),
+	: Unit(Duration::milliseconds(100)),
 	  m_listener(libfreenect2::Frame::Color |
 				 libfreenect2::Frame::Ir |
 				 libfreenect2::Frame::Depth),
@@ -170,7 +168,7 @@ void KinectGrabber::initialize()
 	m_channelDepth = publish<DepthImgType>("DepthImage");
 	for(auto dataIter = m_rgbImage.begin(); dataIter != m_rgbImage.end(); ++dataIter) {
 		auto data = *dataIter;
-		data[0] = 0;
+		data[0] = 255;
 		data[1] = 0;
 		data[2] = 255;
 	}
@@ -178,8 +176,11 @@ void KinectGrabber::initialize()
 
 void KinectGrabber::process(const Timer& timer)
 {
-	if(!m_listener.waitForNewFrame(m_frames, m_pollTime.totalMilliseconds()))
+	std::cout << "Call KinectGrabber::process" << std::endl;
+	if(!m_listener.waitForNewFrame(m_frames, 10)) { //m_pollTime.totalMilliseconds()))
+		std::cout << "No new frames this time" << std::endl;
 		return;
+	}
 
 	libfreenect2::Frame* rgb = m_frames[libfreenect2::Frame::Color];
 	//libfreenect2::Frame* ir = frames[libfreenect2::Frame::Ir];
@@ -202,6 +203,7 @@ void KinectGrabber::process(const Timer& timer)
 
 	ChannelWrite<RGBImgType> wRGB = m_channelRGB.write();
 	wRGB->value() = m_rgbImage;
+	std::cout << "Publish RGBImage" << std::endl;
 
 	cv::Mat depthRaw(m_undistortedDepth.height, m_undistortedDepth.width, CV_8SC4);
 	depthRaw.data = m_undistortedDepth.data;
@@ -212,6 +214,7 @@ void KinectGrabber::process(const Timer& timer)
 
 	ChannelWrite<DepthImgType> wDepth = m_channelDepth.write();
 	wDepth->value() = m_depthImg;
+	std::cout << "Publish DepthImage" << std::endl;
 
 	m_listener.release(m_frames);
 }
