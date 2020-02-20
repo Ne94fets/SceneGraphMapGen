@@ -56,6 +56,8 @@
 #include <libfreenect2/registration.h>
 #include <libfreenect2/packet_pipeline.h>
 
+#include <opencv2/core.hpp>
+#include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 
 using namespace mira;
@@ -108,8 +110,9 @@ private:
 	typedef Img<uint8_t, 3> RGBImgType;
 	typedef Img<uint8_t, 1> DepthImgType;
 
-	RGBImgType		m_rgbImage;
-	DepthImgType	m_depthImg;
+	RGBImgType		m_imgRGB;
+	DepthImgType	m_imgDepth;
+
 	Channel<RGBImgType>		m_channelRGB;
 	Channel<DepthImgType>	m_channelDepth;
 };
@@ -123,13 +126,9 @@ KinectGrabber::KinectGrabber()
 				 libfreenect2::Frame::Depth),
 	  m_undistortedDepth(512, 424, 4),
 	  m_registeredRGB(512, 424, 4),
-	  m_rgbImage(515, 424),
-	  m_depthImg(512, 424)
+	  m_imgRGB(512, 424),
+	  m_imgDepth(512, 424)
 {
-//	m_pipeline = new libfreenect2::CpuPacketPipeline();
-//	if(!m_pipeline)
-//		throw std::runtime_error("Could not create cpu packet pipeline");
-
 	if(m_freenect2.enumerateDevices() == 0)
 		throw std::runtime_error("No Kinect connected!");
 
@@ -166,7 +165,7 @@ void KinectGrabber::initialize()
 	//subscribe<Pose2>("Pose", &UnitName::onPoseChanged);
 	m_channelRGB = publish<RGBImgType>("RGBImage");
 	m_channelDepth = publish<DepthImgType>("DepthImage");
-	for(auto dataIter = m_rgbImage.begin(); dataIter != m_rgbImage.end(); ++dataIter) {
+	for(auto dataIter = m_imgRGB.begin(); dataIter != m_imgRGB.end(); ++dataIter) {
 		auto data = *dataIter;
 		data[0] = 255;
 		data[1] = 0;
@@ -176,9 +175,8 @@ void KinectGrabber::initialize()
 
 void KinectGrabber::process(const Timer& timer)
 {
-	std::cout << "Call KinectGrabber::process" << std::endl;
 	if(!m_listener.waitForNewFrame(m_frames, 10)) { //m_pollTime.totalMilliseconds()))
-		std::cout << "No new frames this time" << std::endl;
+		std::cout << "No new frames in this time frame" << std::endl;
 		return;
 	}
 
@@ -188,33 +186,25 @@ void KinectGrabber::process(const Timer& timer)
 
 	m_registration->apply(rgb, depth, &m_undistortedDepth, &m_registeredRGB);
 
-	cv::Mat colorRaw(m_registeredRGB.height, m_registeredRGB.width, CV_8UC4);
-	colorRaw.data = m_registeredRGB.data;
-	cv::Mat tmp(colorRaw.rows, colorRaw.cols, CV_8UC3);
-	uchar* dataOut = tmp.data;
-	for(const uchar* data = colorRaw.data; data < colorRaw.dataend; data+=4) {
-		dataOut[0] = data[0];
-		dataOut[1] = data[1];
-		dataOut[2] = 255;
-		dataOut += 3;
-	}
-	//cv::cvtColor(colorRaw, tmp, CV_BGRA2BGR);
-	//cv::flip(tmp, m_rgbImage, 1);
-
-	ChannelWrite<RGBImgType> wRGB = m_channelRGB.write();
-	wRGB->value() = m_rgbImage;
-	std::cout << "Publish RGBImage" << std::endl;
-
 	cv::Mat depthRaw(m_undistortedDepth.height, m_undistortedDepth.width, CV_8SC4);
 	depthRaw.data = m_undistortedDepth.data;
 	cv::Mat regDepthChannel[4];
 	cv::split(depthRaw, regDepthChannel);
-	cv::flip(regDepthChannel[2], tmp, 1);
-	tmp.convertTo(m_depthImg, CV_8UC1, 1, 128);
+	cv::Mat tmpDepth;
+	cv::flip(regDepthChannel[2], tmpDepth, 1);
+	tmpDepth.convertTo(m_imgDepth, CV_8UC1, 1, 128);
 
 	ChannelWrite<DepthImgType> wDepth = m_channelDepth.write();
-	wDepth->value() = m_depthImg;
-	std::cout << "Publish DepthImage" << std::endl;
+	wDepth->value() = m_imgDepth;
+
+	cv::Mat bgrxReg(m_registeredRGB.height, m_registeredRGB.width, CV_8UC4);
+	bgrxReg.data = m_registeredRGB.data;
+	cv::Mat tmpRGB(bgrxReg.rows, bgrxReg.cols, CV_8UC3);
+	cv::cvtColor(bgrxReg, tmpRGB, CV_BGRA2BGR);
+	cv::flip(tmpRGB, m_imgRGB, 1);
+
+	ChannelWrite<RGBImgType> wRGB = m_channelRGB.write();
+	wRGB->value() = m_imgRGB;
 
 	m_listener.release(m_frames);
 }
