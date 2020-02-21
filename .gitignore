@@ -72,6 +72,7 @@ Thumbs.db
 *.dll
 *.exe
 
+doc/
 build/
 lib/
 PackageList.txt
