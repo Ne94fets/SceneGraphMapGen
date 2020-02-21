@@ -3,7 +3,7 @@
 DOXYFILE_ENCODING      = UTF-8
 PROJECT_NAME           = MIRA
 PROJECT_NUMBER         = 
-OUTPUT_DIRECTORY       = /home/steffen/Projects/GraphMap/doc/domains/Kinect/
+OUTPUT_DIRECTORY       = /mnt/hdd/steffen/Projects/GraphMap/doc/domains/Kinect/
 CREATE_SUBDIRS         = NO
 OUTPUT_LANGUAGE        = English
 
@@ -191,12 +191,12 @@ SKIP_FUNCTION_MACROS   = YES
 
 # Configuration::additions related to external references   
 
-TAGFILES               = "/home/steffen/Software/MIRA/make/documentation/OpenCV.tag=http://opencv.willowgarage.com/documentation/cpp/" \ 
-						 "/home/steffen/Software/MIRA/make/documentation/Eigen.tag=http://eigen.tuxfamily.org/dox/" \
-						 "/home/steffen/Software/MIRA/doc/MIRA.tag=../../../../../Software/MIRA/doc" \ 
+TAGFILES               = "/mnt/hdd/steffen/git/MyMIRA/make/documentation/OpenCV.tag=http://opencv.willowgarage.com/documentation/cpp/" \ 
+						 "/mnt/hdd/steffen/git/MyMIRA/make/documentation/Eigen.tag=http://eigen.tuxfamily.org/dox/" \
+						 "/mnt/hdd/steffen/git/MyMIRA/doc/MIRA.tag=../../../../../git/MyMIRA/doc" \ 
                         
 
-GENERATE_TAGFILE       = /home/steffen/Projects/GraphMap/doc/domains/Kinect//Kinect.tag
+GENERATE_TAGFILE       = /mnt/hdd/steffen/Projects/GraphMap/doc/domains/Kinect//Kinect.tag
 ALLEXTERNALS           = NO
 EXTERNAL_GROUPS        = NO
 PERL_PATH              = /usr/bin/perl
