@@ -77,4 +77,6 @@ doc/
 download/
 lib/
 tensorflow/
+
+model.pb
 PackageList.txt
