@@ -72,7 +72,9 @@ Thumbs.db
 *.dll
 *.exe
 
-doc/
 build/
+doc/
+download/
 lib/
+tensorflow/
 PackageList.txt

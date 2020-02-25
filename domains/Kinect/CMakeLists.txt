@@ -19,16 +19,15 @@ INCLUDE_DIRECTORIES(${CMAKE_CURRENT_LIST_DIR}/include)
 
 MIRA_ADD_LIBRARY(KinectGrabber
 	SHARED
-	#PACKAGE $PACKAGE$
+	PACKAGE Kinect
 	SOURCE
 		src/KinectGrabber.C
 
 	LINK_LIBS
 		MIRABase
 		MIRAFramework
+		libfreenect2.so
 )
-
-target_link_libraries(KinectGrabber libfreenect2.so)
 
 ###############################################################################
 
