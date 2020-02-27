@@ -1,0 +1,8 @@
+project(cppflow)
+
+include_directories("include")
+
+add_library(cppflow SHARED src/Model.cpp src/Tensor.cpp)
+
+target_link_libraries(cppflow tensorflow)
+
