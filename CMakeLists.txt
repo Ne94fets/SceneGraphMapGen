@@ -11,6 +11,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 ##############################################################################
 
+include(ExternalProject)
+
 ### set up download dir
 set(DOWNLOAD_DIR "${CMAKE_SOURCE_DIR}/download")
 if(NOT EXISTS "${DOWNLOAD_DIR}")
@@ -21,32 +23,8 @@ if(NOT EXISTS "${DOWNLOAD_DIR}")
 	endif()
 endif()
 
-### install tensorflow
-set(TF_TARGET_DIR "${CMAKE_SOURCE_DIR}/tensorflow")
-if(NOT EXISTS "${TF_TARGET_DIR}")
-	set(TF_DOWNLOAD_PATH "${DOWNLOAD_DIR}/tensorflow.tar.gz")
-	if(NOT EXISTS "${TF_DOWNLOAD_PATH}")
-		message(STATUS "Downloading tensorflow")
-		file(DOWNLOAD
-			"https://storage.googleapis.com/tensorflow/libtensorflow/libtensorflow-cpu-linux-x86_64-1.15.0.tar.gz"
-			"${TF_DOWNLOAD_PATH}"
-			SHOW_PROGRESS)
-	endif()
-	file(MAKE_DIRECTORY "${TF_TARGET_DIR}")
-	if(NOT EXISTS "${TF_TARGET_DIR}")
-		message(FATAL_ERROR "Failed to create directory ${TF_TARGET_DIR}")
-	endif()
-	execute_process(
-		COMMAND ${CMAKE_COMMAND} -E tar xzf "${TF_DOWNLOAD_PATH}"
-		WORKING_DIRECTORY "${TF_TARGET_DIR}"
-		RESULT_VARIABLE CMD_RES)
-	if(NOT ${CMD_RES} EQUAL 0)
-		message(FATAL_ERROR "Failed to extract ${TF_DOWNLOAD_PATH}")
-	endif()
-endif()
-
-INCLUDE_DIRECTORIES("${TF_TARGET_DIR}/include")
-LINK_DIRECTORIES("${TF_TARGET_DIR}/lib")
+### install tensorflow python
+execute_process(COMMAND pip install --user --upgrade tensorflow)
 
 ### create tensorflow model symlink
 set(MODEL_SYMLINK_TARGET "${CMAKE_SOURCE_DIR}/external/models/faster_rcnn_inception_v2_coco_2018_01_28/saved_model/saved_model.pb")
