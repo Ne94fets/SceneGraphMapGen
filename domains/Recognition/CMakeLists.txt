@@ -21,11 +21,11 @@ MIRA_ADD_LIBRARY(ObjectRecognition3d
 	SHARED
 	PACKAGE Recognition
 	SOURCE
+		etc/ObjectRecognition3d.xml
 		src/ObjectRecognition3d.C
 
 	LINK_LIBS
 		MIRABase
 		MIRAFramework
-		cppflow
-		libtensorflow.so
+		libtensorflow_cc.so
 )

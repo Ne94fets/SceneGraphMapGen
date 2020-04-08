@@ -36,6 +36,7 @@ MIRA_ADD_LIBRARY(FloatProducer
 	PACKAGE Kinect
 	SOURCE
 		src/FloatProducer.C
+        etc/FloatProducer.xml
 
 	LINK_LIBS
 		MIRABase
@@ -49,6 +50,7 @@ MIRA_ADD_LIBRARY(FloatConsumer
 	PACKAGE Kinect
 	SOURCE
 		src/FloatConsumer.C
+        etc/FloatConsumer.xml
 
 	LINK_LIBS
 		MIRABase

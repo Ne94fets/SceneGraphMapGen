@@ -49,11 +49,31 @@
 #include <image/Img.h>
 
 #include <memory>
+#include <exception>
 
-#include <Model.h>
-#include <Tensor.h>
+#include "tensorflow/core/public/session.h"
+#include "tensorflow/core/platform/env.h"
+
+namespace tf = tensorflow;
 
 using namespace mira;
+
+
+class Vector2TensorBuffer : public tf::TensorBuffer
+{
+public:
+	Vector2TensorBuffer(void* data, std::size_t len) : tf::TensorBuffer(data), m_len(len) {}
+	//returns how many bytes we have in our buffer
+	std::size_t size() const override {return m_len;};
+	//needed so TF knows this isn't a child of some other buffer
+	TensorBuffer* root_buffer() override { return this; }
+	// Not actually sure why we need this, but it lets TF know where the memory for this tensor came from
+	void FillAllocationDescription(tensorflow::AllocationDescription* proto) const override{};
+	// A value of false indicates this TensorBuffer does not own the underlying data
+	bool OwnsMemory() const override { return false; }
+private:
+	std::size_t m_len;
+};
 
 namespace recognition { 
 
@@ -69,6 +89,7 @@ MIRA_OBJECT(ObjectRecognition3d)
 public:
 
 	ObjectRecognition3d();
+	virtual ~ObjectRecognition3d();
 
 	template<typename Reflector>
 	void reflect(Reflector& r)
@@ -101,30 +122,45 @@ private:
 	// void setPose(const Pose2& pose);
 
 private:
-
-	Model					m_model;
-	std::shared_ptr<Tensor>	m_input;
-	std::shared_ptr<Tensor>	m_output;
 	//Channel<Img<>> mChannel;
+	tf::Session* m_session;
+	tf::GraphDef m_graphDef;
+
+	std::vector<tf::Tensor> m_outputs;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
 
 ObjectRecognition3d::ObjectRecognition3d()
-	: m_model("model.pb")
 {
 	// TODO: further initialization of members, etc.
 }
 
+ObjectRecognition3d::~ObjectRecognition3d()
+{
+	tf::Status status = m_session->Close();
+}
+
 void ObjectRecognition3d::initialize()
 {
+	tf::Status status = NewSession(tf::SessionOptions(), &m_session);
+	if (!status.ok()) {
+		throw std::runtime_error(status.ToString());
+	}
+
+	status = ReadBinaryProto(tf::Env::Default(), "models/graph.pb", &m_graphDef);
+	if (!status.ok()) {
+		throw std::runtime_error(status.ToString());
+	}
+
+	// Add the graph to the session
+	status = m_session->Create(m_graphDef);
+	if (!status.ok()) {
+		throw std::runtime_error(status.ToString());
+	}
+
 	subscribe<RGBImgType>("RGBImage", &ObjectRecognition3d::onNewRGBImage);
 	subscribe<DepthImgType>("DepthImage", &ObjectRecognition3d::onNewDepthImage);
-
-	m_model.init();
-
-	m_input = std::make_shared<Tensor>(m_model, "input");
-	m_output = std::make_shared<Tensor>(m_model, "output");
 
 	// TODO: subscribe and publish all required channels
 	//subscribe<Pose2>("Pose", &ObjectRecognition3d::onPoseChanged);
@@ -134,28 +170,29 @@ void ObjectRecognition3d::initialize()
 void ObjectRecognition3d::onNewRGBImage(ChannelRead<ObjectRecognition3d::RGBImgType> image)
 {
 	std::vector<uint8_t> tmp(image->data(), image->data() + image->size().size()*3);
-	m_input->set_data(tmp);
-	m_model.run(*m_input, *m_output);
-	for(float f : m_output->get_data<float>()) {
-		std::cout << " " << f;
+	auto imgSize = image->size();
+	Vector2TensorBuffer v2B((void*)image->data(), imgSize.width() * imgSize.height());
+	tf::Tensor inTensor(tf::DataType::DT_INT8, tf::TensorShape(), &v2B);
+	std::vector<std::pair<std::string, tf::Tensor>> inputs = {
+		{"image_tensor", inTensor},
+	};
+
+	// Run the session, evaluating our "c" operation from the graph
+	tf::Status status = m_session->Run(inputs, {"detection_boxes", "detection_scores"}, {}, &m_outputs);
+	if (!status.ok()) {
+		std::cout << status.ToString() << "\n";
 	}
-	std::cout << std::endl;
+
+	auto output_c = m_outputs[0].scalar<float>();
+	// https://github.com/tensorflow/tensorflow/blob/master/tensorflow/core/public/tensor.h)
+	std::cout << m_outputs[0].DebugString() << "\n"; // Tensor<type: float shape: []>
+	std::cout << output_c() << "\n";
 }
 
 void ObjectRecognition3d::onNewDepthImage(ChannelRead<ObjectRecognition3d::DepthImgType> image)
 {
 
 }
-
-//void ObjectRecognition3d::onPoseChanged(ChannelRead<Pose2> data)
-//{
-	// TODO: this method is called whenever the pose has changed
-//}
-
-//void ObjectRecognition3d::setPose(const Pose2& pose)
-//{
-	// TODO: this can be called by RPC (by other authorities, by user from RPC Console/View, mirainspect, ...)
-//}
 
 ///////////////////////////////////////////////////////////////////////////////
 
