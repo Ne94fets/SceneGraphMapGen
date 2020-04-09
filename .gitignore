@@ -72,11 +72,14 @@ Thumbs.db
 *.dll
 *.exe
 
-build/
-doc/
-download/
-lib/
-tensorflow/
+/build
+/doc
+/download
+/external/absl
+/external/bazel
+/external/protobuf
+/external/tensorflow
+/lib
 
 model.pb
 PackageList.txt
