@@ -21,6 +21,7 @@ MIRA_ADD_LIBRARY(KinectGrabber
 	SHARED
 	PACKAGE Kinect
 	SOURCE
+        include/KinectGrabber.h
 		src/KinectGrabber.C
 
 	LINK_LIBS

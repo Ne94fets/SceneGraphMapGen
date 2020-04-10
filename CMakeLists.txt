@@ -69,35 +69,67 @@ set(PROTOBUF_DIR "${CMAKE_SOURCE_DIR}/external/protobuf")
 if(NOT EXISTS "${PROTOBUF_DIR}")
 	message(STATUS "Downloading protobuf")
 	execute_process(
-		COMMAND git clone "https://github.com/protocolbuffers/protobuf.git" ${PROTOBUF_DIR})
-	message(STATUS "Check out 3.8.0")
-	execute_process(
-		COMMAND git checkout v3.8.0
-		WORKING_DIRECTORY ${PROTOBUF_DIR})
+        COMMAND git clone "https://github.com/protocolbuffers/protobuf.git" ${PROTOBUF_DIR}
+        ERROR_VARIABLE EXEC_ERR)
+    if(${RESULT_VARIABLE})
+        message(FATAL_ERROR ${EXEC_ERR})
+    endif()
+    message(STATUS "Check out 3.8.0")
+    execute_process(
+        COMMAND git checkout v3.8.0
+        WORKING_DIRECTORY ${PROTOBUF_DIR}
+        ERROR_VARIABLE EXEC_ERR)
+    if(${RESULT_VARIABLE})
+        message(FATAL_ERROR ${EXEC_ERR})
+    endif()
 	message(STATUS "Init submodules")
 	execute_process(
 		COMMAND git submodule update --init --recursive
-		WORKING_DIRECTORY ${PROTOBUF_DIR})
+        WORKING_DIRECTORY ${PROTOBUF_DIR}
+        ERROR_VARIABLE EXEC_ERR)
+    if(${RESULT_VARIABLE})
+        message(FATAL_ERROR ${EXEC_ERR})
+    endif()
 	message(STATUS "Running autogen.sh")
 	execute_process(
 		COMMAND ./autogen.sh
-		WORKING_DIRECTORY ${PROTOBUF_DIR})
+        WORKING_DIRECTORY ${PROTOBUF_DIR}
+        ERROR_VARIABLE EXEC_ERR)
+    if(${RESULT_VARIABLE})
+        message(FATAL_ERROR ${EXEC_ERR})
+    endif()
 	message(STATUS "Running configure")
 	execute_process(
 		COMMAND ./configure --prefix=${PROTOBUF_DIR}
-		WORKING_DIRECTORY ${PROTOBUF_DIR})
-	message(STATUS "Building potobuf")
+        WORKING_DIRECTORY ${PROTOBUF_DIR}
+        ERROR_VARIABLE EXEC_ERR)
+    if(${RESULT_VARIABLE})
+        message(FATAL_ERROR ${EXEC_ERR})
+    endif()
+    message(STATUS "Building potobuf with make -j ${NumCores} -pipe")
 	execute_process(
 		COMMAND make -j ${NumCores} -pipe
-		WORKING_DIRECTORY ${PROTOBUF_DIR})
+        WORKING_DIRECTORY ${PROTOBUF_DIR}
+        ERROR_VARIABLE EXEC_ERR)
+    if(${RESULT_VARIABLE})
+        message(FATAL_ERROR ${EXEC_ERR})
+    endif()
 	message(STATUS "Checking build")
 	execute_process(
 		COMMAND make check -j ${NumCores} -pipe
-		WORKING_DIRECTORY ${PROTOBUF_DIR})
+        WORKING_DIRECTORY ${PROTOBUF_DIR}
+        ERROR_VARIABLE EXEC_ERR)
+    if(${RESULT_VARIABLE})
+        message(FATAL_ERROR ${EXEC_ERR})
+    endif()
 	message(STATUS "Installing protobuf")
 	execute_process(
 		COMMAND make install
-		WORKING_DIRECTORY ${PROTOBUF_DIR})
+        WORKING_DIRECTORY ${PROTOBUF_DIR}
+        ERROR_VARIABLE EXEC_ERR)
+    if(${RESULT_VARIABLE})
+        message(FATAL_ERROR ${EXEC_ERR})
+    endif()
 endif()
 INCLUDE_DIRECTORIES("${PROTOBUF_DIR}/include")
 LINK_DIRECTORIES("${PROTOBUF_DIR}/lib")

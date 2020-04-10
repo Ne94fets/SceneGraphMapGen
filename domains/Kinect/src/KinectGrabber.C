@@ -44,80 +44,11 @@
  * @date   2019/10/01
  */
 
-#define OPENCV_TRAITS_ENABLE_DEPRECATED
-
-#include <fw/Unit.h>
-#include <image/Img.h>
-
-#include <exception>
-
-#include <libfreenect2/libfreenect2.hpp>
-#include <libfreenect2/frame_listener_impl.h>
-#include <libfreenect2/registration.h>
-#include <libfreenect2/packet_pipeline.h>
-
-#include <opencv2/core.hpp>
-#include <opencv2/imgcodecs.hpp>
-#include <opencv2/imgproc.hpp>
+#include "KinectGrabber.h"
 
 using namespace mira;
 
 namespace kinect { 
-
-///////////////////////////////////////////////////////////////////////////////
-
-/**
- * Grabs RGB and depth images
- */
-class KinectGrabber : public Unit
-{
-MIRA_OBJECT(KinectGrabber)
-
-public:
-
-	KinectGrabber();
-	virtual ~KinectGrabber();
-
-	template<typename Reflector>
-	void reflect(Reflector& r)
-	{
-		MIRA_REFLECT_BASE(r, Unit);
-
-		// TODO: reflect all parameters (members and properties) that specify the persistent state of the unit
-		//r.property("Param1", mParam1, "First parameter of this unit with default value", 123.4f);
-		//r.member("Param2", mParam2, setter(&UnitName::setParam2,this), "Second parameter with setter");
-	}
-
-protected:
-
-	virtual void initialize();
-
-	virtual void process(const Timer& timer);
-
-private:
-
-	// void onPoseChanged(ChannelRead<Pose2> pose);
-
-private:
-	libfreenect2::Freenect2					m_freenect2;
-	libfreenect2::Freenect2Device*			m_dev = nullptr;
-	libfreenect2::Registration*				m_registration = nullptr;
-	libfreenect2::SyncMultiFrameListener	m_listener;
-	libfreenect2::FrameMap					m_frames;
-	libfreenect2::Frame						m_undistortedDepth;
-	libfreenect2::Frame						m_registeredRGB;
-
-	typedef Img<uint8_t, 3> RGBImgType;
-	typedef Img<uint8_t, 1> DepthImgType;
-
-	RGBImgType		m_imgRGB;
-	DepthImgType	m_imgDepth;
-
-	Channel<RGBImgType>		m_channelRGB;
-	Channel<DepthImgType>	m_channelDepth;
-};
-
-///////////////////////////////////////////////////////////////////////////////
 
 KinectGrabber::KinectGrabber()
 	: Unit(Duration::milliseconds(100)),
@@ -158,23 +89,24 @@ void KinectGrabber::initialize()
 	std::cout << "Kinect serial: " << m_dev->getSerialNumber() << std::endl;
 	std::cout << "Kinect firmware: " << m_dev->getFirmwareVersion() << std::endl;
 
-	m_registration = new libfreenect2::Registration(m_dev->getIrCameraParams(),
-													m_dev->getColorCameraParams());
+	m_regData.depth_p = m_dev->getIrCameraParams();
+	m_regData.rgb_p = m_dev->getColorCameraParams();
+
+	m_registration = new libfreenect2::Registration(m_regData.depth_p,
+													m_regData.rgb_p);
 
 	// TODO: subscribe and publish all required channels
 	//subscribe<Pose2>("Pose", &UnitName::onPoseChanged);
+	m_channelRegistrationData = publish<RegistrationData>("KinectRegData");
 	m_channelRGB = publish<RGBImgType>("RGBImage");
 	m_channelDepth = publish<DepthImgType>("DepthImage");
-	for(auto dataIter = m_imgRGB.begin(); dataIter != m_imgRGB.end(); ++dataIter) {
-		auto data = *dataIter;
-		data[0] = 255;
-		data[1] = 0;
-		data[2] = 255;
-	}
 }
 
 void KinectGrabber::process(const Timer& timer)
 {
+	auto wRegData = m_channelRegistrationData.write();
+	wRegData->value() = m_regData;
+
 	if(!m_listener.waitForNewFrame(m_frames, 10)) { //m_pollTime.totalMilliseconds()))
 		std::cout << "No new frames in this time frame" << std::endl;
 		return;
@@ -184,7 +116,10 @@ void KinectGrabber::process(const Timer& timer)
 	//libfreenect2::Frame* ir = frames[libfreenect2::Frame::Ir];
 	libfreenect2::Frame* depth = m_frames[libfreenect2::Frame::Depth];
 
-	m_registration->apply(rgb, depth, &m_undistortedDepth, &m_registeredRGB);
+	// depth image may consists of floats
+	m_registration->apply(rgb, depth,
+						  &m_undistortedDepth, &m_registeredRGB,
+						  false);	// do not filter pixels (generates black pixels in image)
 
 	cv::Mat depthRaw(m_undistortedDepth.height, m_undistortedDepth.width, CV_8SC4);
 	depthRaw.data = m_undistortedDepth.data;
