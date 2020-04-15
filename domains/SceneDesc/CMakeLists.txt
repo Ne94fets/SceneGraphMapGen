@@ -1,9 +1,9 @@
 
-MIRA_REQUIRE_PACKAGE(Recognition)
+MIRA_REQUIRE_PACKAGE(SceneDesc)
 
 ###############################################################################
 
-MIRA_ADD_DOCUMENTATION(Recognition
+MIRA_ADD_DOCUMENTATION(SceneDesc
 	DIRS
 		doc
 		include
@@ -15,22 +15,18 @@ MIRA_ADD_DOCUMENTATION(Recognition
 
 INCLUDE_DIRECTORIES(${CMAKE_CURRENT_LIST_DIR}/include)
 INCLUDE_DIRECTORIES(${CMAKE_SOURCE_DIR}/toolboxes/RecognitionDataTypes/include)
-INCLUDE_DIRECTORIES(${CMAKE_SOURCE_DIR}/toolboxes/KinectDataTypes/include)
 
 ###############################################################################
 
-MIRA_ADD_LIBRARY(ObjectRecognition3d
-	SHARED
-	PACKAGE Recognition
-	SOURCE
-		etc/ObjectRecognition3d.xml
-        include/ObjectRecognition3d.h
-		src/ObjectRecognition3d.C
+MIRA_ADD_LIBRARY(GraphMap
+    SHARED
+    PACKAGE SceneDesc
+    SOURCE
+        etc/GraphMap.xml
+        src/GraphMap.C
 
-	LINK_LIBS
-		MIRABase
-		MIRAFramework
-		libtensorflow_cc.so
+    LINK_LIBS
+        MIRABase
+        MIRAFramework
         RecognitionDataTypes
-        KinectDataTypes
 )

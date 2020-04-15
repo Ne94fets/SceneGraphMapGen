@@ -14,6 +14,7 @@ MIRA_ADD_DOCUMENTATION(Kinect
 ###############################################################################
 
 INCLUDE_DIRECTORIES(${CMAKE_CURRENT_LIST_DIR}/include)
+INCLUDE_DIRECTORIES(${CMAKE_SOURCE_DIR}/toolboxes/KinectDataTypes/include)
 
 ###############################################################################
 
@@ -26,8 +27,9 @@ MIRA_ADD_LIBRARY(KinectGrabber
 
 	LINK_LIBS
 		MIRABase
-		MIRAFramework
-		libfreenect2.so
+        MIRAFramework
+        libfreenect2.so
+        KinectDataTypes
 )
 
 ###############################################################################

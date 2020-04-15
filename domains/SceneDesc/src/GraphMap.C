@@ -37,95 +37,85 @@
  */
 
 /**
- * @file KinectGrabber.h
- *    Grabs RGB and depth images
+ * @file GraphMap.C
+ *    Graph-based scene description
  *
  * @author Steffen Kastner
- * @date   2019/10/01
+ * @date   2020/04/11
  */
 
-#ifndef KINECTGRABBER_H
-#define KINECTGRABBER_H
+//#include <transform/Pose.h> // TODO: enable to use Pose2!
+#include <fw/MicroUnit.h>
 
-#define OPENCV_TRAITS_ENABLE_DEPRECATED
-
-#include <fw/Unit.h>
-#include <image/Img.h>
-
-#include <exception>
-#include <type_traits>
-
-#include <libfreenect2/libfreenect2.hpp>
-#include <libfreenect2/frame_listener_impl.h>
-#include <libfreenect2/registration.h>
-#include <libfreenect2/packet_pipeline.h>
-
-#include <opencv2/core.hpp>
-#include <opencv2/imgcodecs.hpp>
-#include <opencv2/imgproc.hpp>
-
-#include <kinectdatatypes/Types.h>
+#include "recognitiondatatypes/Detection.h"
 
 using namespace mira;
 
-namespace kinect { 
+namespace scenedesc {
 
 ///////////////////////////////////////////////////////////////////////////////
 
 /**
- * Grabs RGB and depth images
+ * Graph-based scene description
  */
-class KinectGrabber : public Unit
-{
-MIRA_OBJECT(KinectGrabber)
-public:
-	typedef kinectdatatypes::RegistrationData	RegistrationData;
-	typedef kinectdatatypes::RGBImgType			RGBImgType;
-	typedef kinectdatatypes::DepthImgType		DepthImgType;
+class GraphMap : public MicroUnit {
+	MIRA_OBJECT(GraphMap)
 
 public:
 
-	KinectGrabber();
-	virtual ~KinectGrabber();
+	typedef recognitiondatatypes::Detection	Detection;
+
+public:
+
+	GraphMap();
 
 	template<typename Reflector>
-	void reflect(Reflector& r)
-	{
-		MIRA_REFLECT_BASE(r, Unit);
+	void reflect(Reflector& r) {
+		MIRA_REFLECT_BASE(r, MicroUnit);
 
 		// TODO: reflect all parameters (members and properties) that specify the persistent state of the unit
 		//r.property("Param1", mParam1, "First parameter of this unit with default value", 123.4f);
-		//r.member("Param2", mParam2, setter(&UnitName::setParam2,this), "Second parameter with setter");
+		//r.member("Param2", mParam2, setter(&GraphMap::setParam2,this), "Second parameter with setter");
+
+		// TODO: reflect all methods if this is a service providing RPCs
+		//r.method("setPose", &GraphMap::setPose, this, "Set the pose",
+		//         "pose", "The pose to set", Pose2(1.0, 2.0, deg2rad(90.0)));
 	}
 
 protected:
 
 	virtual void initialize();
 
-	virtual void process(const Timer& timer);
-
 private:
 
+	void onObjectDetection(ChannelRead<Detection> detection);
 	// void onPoseChanged(ChannelRead<Pose2> pose);
 
+	// void setPose(const Pose2& pose);
+
 private:
-	libfreenect2::Freenect2					m_freenect2;
-	libfreenect2::Freenect2Device*			m_dev = nullptr;
-	libfreenect2::Registration*				m_registration = nullptr;
-	libfreenect2::SyncMultiFrameListener	m_listener;
-	libfreenect2::FrameMap					m_frames;
-	libfreenect2::Frame						m_undistortedDepth;
-	libfreenect2::Frame						m_registeredRGB;
 
-	RegistrationData	m_regData;
-	RGBImgType			m_imgRGB;
-	DepthImgType		m_imgDepth;
-
-	Channel<RegistrationData>	m_channelRegistrationData;
-	Channel<RGBImgType>			m_channelRGB;
-	Channel<DepthImgType>		m_channelDepth;
+	//Channel<Img<>> mChannel;
 };
 
-} // namespace kinect
+///////////////////////////////////////////////////////////////////////////////
 
-#endif // KINECTGRABBER_H
+GraphMap::GraphMap() {
+	// TODO: further initialization of members, etc.
+}
+
+void GraphMap::initialize() {
+	subscribe<Detection>("ObjectDetection", &GraphMap::onObjectDetection);
+}
+
+void GraphMap::onObjectDetection(ChannelRead<GraphMap::Detection> detection) {
+	Detection d = *detection;
+	std::string typeName = Detection::getName(d.type);
+	std::cout << "Detected " << typeName << std::endl;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+}
+
+MIRA_CLASS_SERIALIZATION(scenedesc::GraphMap, mira::MicroUnit);

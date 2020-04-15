@@ -1,3 +1,4 @@
+ 
 /*
  * Copyright (C) 2015 by
  *   MetraLabs GmbH (MLAB), GERMANY
@@ -37,95 +38,87 @@
  */
 
 /**
- * @file KinectGrabber.h
- *    Grabs RGB and depth images
+ * @file ObjectRecognition3d.C
+ *    Recognizes object in RGB images and locates them in 3D space
  *
  * @author Steffen Kastner
- * @date   2019/10/01
+ * @date   2020/02/21
  */
 
-#ifndef KINECTGRABBER_H
-#define KINECTGRABBER_H
+#ifndef RECOGNITION_OBJECTRECKOGNITION3D_H
+#define RECOGNITION_OBJECTRECKOGNITION3D_H
 
-#define OPENCV_TRAITS_ENABLE_DEPRECATED
+//#include <transform/Pose.h> // TODO: enable to use Pose2!
+#include <fw/MicroUnit.h>
 
-#include <fw/Unit.h>
-#include <image/Img.h>
-
-#include <exception>
-#include <type_traits>
-
-#include <libfreenect2/libfreenect2.hpp>
-#include <libfreenect2/frame_listener_impl.h>
-#include <libfreenect2/registration.h>
-#include <libfreenect2/packet_pipeline.h>
-
-#include <opencv2/core.hpp>
-#include <opencv2/imgcodecs.hpp>
-#include <opencv2/imgproc.hpp>
-
+#include <recognitiondatatypes/Detection.h>
 #include <kinectdatatypes/Types.h>
 
 using namespace mira;
 
-namespace kinect { 
+// forward declarations
+namespace tensorflow {
+	class Session;
+} // namespace tensorflow
+
+namespace tf = tensorflow;
+
+namespace recognition {
 
 ///////////////////////////////////////////////////////////////////////////////
 
 /**
- * Grabs RGB and depth images
+ * Recognizes object in RGB images and locates them in 3D space
  */
-class KinectGrabber : public Unit
-{
-MIRA_OBJECT(KinectGrabber)
+class ObjectRecognition3d : public MicroUnit {
+	MIRA_OBJECT(ObjectRecognition3d)
+
 public:
 	typedef kinectdatatypes::RegistrationData	RegistrationData;
 	typedef kinectdatatypes::RGBImgType			RGBImgType;
 	typedef kinectdatatypes::DepthImgType		DepthImgType;
 
-public:
+	typedef recognitiondatatypes::Detection	Detection;
 
-	KinectGrabber();
-	virtual ~KinectGrabber();
+public:
+	ObjectRecognition3d();
+	virtual ~ObjectRecognition3d();
 
 	template<typename Reflector>
-	void reflect(Reflector& r)
-	{
-		MIRA_REFLECT_BASE(r, Unit);
+	void reflect(Reflector& r) {
+		MIRA_REFLECT_BASE(r, MicroUnit);
 
 		// TODO: reflect all parameters (members and properties) that specify the persistent state of the unit
 		//r.property("Param1", mParam1, "First parameter of this unit with default value", 123.4f);
-		//r.member("Param2", mParam2, setter(&UnitName::setParam2,this), "Second parameter with setter");
+		//r.member("Param2", mParam2, setter(&ObjectRecognition3d::setParam2,this), "Second parameter with setter");
 	}
 
 protected:
-
 	virtual void initialize();
 
-	virtual void process(const Timer& timer);
-
 private:
+	void onRegistrationData(ChannelRead<RegistrationData> data);
+	void onNewRGBImage(ChannelRead<RGBImgType> image);
+	void onNewDepthImage(ChannelRead<DepthImgType> image);
+
+	cv::Point3f getXYZ(int r, int c, float depth);
 
 	// void onPoseChanged(ChannelRead<Pose2> pose);
 
+	// void setPose(const Pose2& pose);
+
 private:
-	libfreenect2::Freenect2					m_freenect2;
-	libfreenect2::Freenect2Device*			m_dev = nullptr;
-	libfreenect2::Registration*				m_registration = nullptr;
-	libfreenect2::SyncMultiFrameListener	m_listener;
-	libfreenect2::FrameMap					m_frames;
-	libfreenect2::Frame						m_undistortedDepth;
-	libfreenect2::Frame						m_registeredRGB;
+	Channel<RGBImgType>		m_channelRGBMarked;
+	Channel<Detection>		m_channelDetection;
+
+	tf::Session*	m_session = nullptr;
 
 	RegistrationData	m_regData;
-	RGBImgType			m_imgRGB;
-	DepthImgType		m_imgDepth;
+	bool				m_hasRegData = false;
 
-	Channel<RegistrationData>	m_channelRegistrationData;
-	Channel<RGBImgType>			m_channelRGB;
-	Channel<DepthImgType>		m_channelDepth;
+	DepthImgType		m_lastDepthImg;
 };
 
-} // namespace kinect
+} // namespace recognition
 
-#endif // KINECTGRABBER_H
+#endif // RECOGNITION_OBJECTRECKOGNITION3D_H

@@ -1,0 +1,30 @@
+###############################################################################
+# KinectDataTypes package file
+###############################################################################
+
+# Our own version
+MIRA_VERSION(0 1 1)
+# Define development state of your package.
+# Supported options: EXPERIMENTAL, STABLE, RELEASE, DEPRECATED
+MIRA_DEVELOPMENT_STATE(EXPERIMENTAL)
+
+MIRA_DESCRIPTION("Types used by kinect domain")
+MIRA_TAGS("kinect, rgb, depth, registration")
+MIRA_AUTHOR("Steffen Kastner")
+
+###############################################################################
+
+# add dependencies to other packages
+MIRA_REQUIRE_PACKAGE(MIRAFramework)
+
+# add dependencies to other include directories
+# e.g. INCLUDE_DIRECTORIES(${OPENCV_INCLUDE_DIRS})
+
+# add our own include directories relative to this package file
+INCLUDE_DIRECTORIES(${CMAKE_CURRENT_LIST_DIR}/include)
+
+# Specify library dependencies that need to be transitive 
+#MIRA_LINK_LIBRARIES(${OPENCV_CORE_LIBRARY})
+
+###############################################################################
+

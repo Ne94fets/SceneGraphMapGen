@@ -44,23 +44,19 @@
  * @date   2020/02/21
  */
 
-//#include <transform/Pose.h> // TODO: enable to use Pose2!
-#include <fw/MicroUnit.h>
-#include <image/Img.h>
+#include "ObjectRecognition3d.h"
 
-#include <memory>
 #include <exception>
 #include <iomanip>
 
 #include "tensorflow/core/public/session.h"
 #include "tensorflow/core/platform/env.h"
 
-#include "../../Kinect/include/KinectGrabber.h"
+#include <opencv2/imgproc.hpp>
 
 namespace tf = tensorflow;
 
 using namespace mira;
-
 
 class Vector2TensorBuffer : public tf::TensorBuffer {
 public:
@@ -70,7 +66,7 @@ public:
 	//needed so TF knows this isn't a child of some other buffer
 	TensorBuffer* root_buffer() override { return this; }
 	// Not actually sure why we need this, but it lets TF know where the memory for this tensor came from
-	void FillAllocationDescription(tensorflow::AllocationDescription* proto) const override {}
+	void FillAllocationDescription(tensorflow::AllocationDescription*) const override {}
 	// A value of false indicates this TensorBuffer does not own the underlying data
 	bool OwnsMemory() const override { return false; }
 private:
@@ -79,79 +75,13 @@ private:
 
 namespace recognition {
 
-///////////////////////////////////////////////////////////////////////////////
-
-/**
- * Recognizes object in RGB images and locates them in 3D space
- */
-class ObjectRecognition3d : public MicroUnit {
-	MIRA_OBJECT(ObjectRecognition3d)
-public:
-
-	typedef kinect::KinectGrabber::RegistrationData	RegistrationData;
-	typedef kinect::KinectGrabber::RGBImgType		RGBImgType;
-	typedef kinect::KinectGrabber::DepthImgType		DepthImgType;
-
-	struct Detection {
-		cv::Rect box;
-		int type;
-		float confidence;
-	};
-
-public:
-
-	ObjectRecognition3d();
-	virtual ~ObjectRecognition3d();
-
-	template<typename Reflector>
-	void reflect(Reflector& r) {
-		MIRA_REFLECT_BASE(r, MicroUnit);
-
-		// TODO: reflect all parameters (members and properties) that specify the persistent state of the unit
-		//r.property("Param1", mParam1, "First parameter of this unit with default value", 123.4f);
-		//r.member("Param2", mParam2, setter(&ObjectRecognition3d::setParam2,this), "Second parameter with setter");
-
-		// TODO: reflect all methods if this is a service providing RPCs
-		//r.method("setPose", &ObjectRecognition3d::setPose, this, "Set the pose",
-		//         "pose", "The pose to set", Pose2(1.0, 2.0, deg2rad(90.0)));
-	}
-
-protected:
-
-	virtual void initialize();
-
-private:
-
-	void onRegistrationData(ChannelRead<RegistrationData> data);
-	void onNewRGBImage(ChannelRead<RGBImgType> image);
-	void onNewDepthImage(ChannelRead<DepthImgType> image);
-
-	cv::Point3f getXYZ(int r, int c, float depth);
-
-	// void onPoseChanged(ChannelRead<Pose2> pose);
-
-	// void setPose(const Pose2& pose);
-
-private:
-	Channel<RGBImgType>		m_channelRGBMarked;
-	tf::Session* m_session;
-	tf::GraphDef m_graphDef;
-
-	RegistrationData	m_regData;
-	bool				m_hasRegData = false;
-	DepthImgType		m_lastDepthImg;
-
-	static std::map<int, std::string> m_lookupMap;
-};
-
-///////////////////////////////////////////////////////////////////////////////
-
 ObjectRecognition3d::ObjectRecognition3d() {
 	// TODO: further initialization of members, etc.{
 }
 
 ObjectRecognition3d::~ObjectRecognition3d() {
-	tf::Status status = m_session->Close();
+	if(m_session)
+		delete m_session;
 }
 
 void ObjectRecognition3d::initialize() {
@@ -160,13 +90,14 @@ void ObjectRecognition3d::initialize() {
 		throw std::runtime_error(status.ToString());
 	}
 
-	status = tf::ReadBinaryProto(tf::Env::Default(), "frozen_inference_graph.pb", &m_graphDef);
+	tf::GraphDef graphDef;
+	status = tf::ReadBinaryProto(tf::Env::Default(), "frozen_inference_graph.pb", &graphDef);
 	if(!status.ok()) {
 		throw std::runtime_error(status.ToString());
 	}
 
 	// Add the graph to the session
-	status = m_session->Create(m_graphDef);
+	status = m_session->Create(graphDef);
 	if(!status.ok()) {
 		throw std::runtime_error(status.ToString());
 	}
@@ -179,6 +110,9 @@ void ObjectRecognition3d::initialize() {
 	//subscribe<Pose2>("Pose", &ObjectRecognition3d::onPoseChanged);
 	//mChannel = publish<Img<>>("Image");
 	m_channelRGBMarked = publish<RGBImgType>("RGBImageMarked");
+	m_channelDetection = publish<Detection>("ObjectDetection");
+
+	publishService(*this);
 }
 
 void ObjectRecognition3d::onRegistrationData(ChannelRead<ObjectRecognition3d::RegistrationData> data) {
@@ -190,7 +124,6 @@ void ObjectRecognition3d::onRegistrationData(ChannelRead<ObjectRecognition3d::Re
 }
 
 void ObjectRecognition3d::onNewRGBImage(ChannelRead<ObjectRecognition3d::RGBImgType> image) {
-	std::cout << "New RGB image" << std::endl;
 	auto imgSize = image->size();
 
 	tf::Tensor inTensor(tf::DataType::DT_UINT8,
@@ -222,21 +155,11 @@ void ObjectRecognition3d::onNewRGBImage(ChannelRead<ObjectRecognition3d::RGBImgT
 	if(outputs.empty())
 		return;
 
-	// https://github.com/tensorflow/tensorflow/blob/master/tensorflow/core/public/tensor.h)
-	std::cout << outputs[0].DebugString() << "\n";
-//	std::cout << m_outputs[0].scalar<int32>()() << "\n";
-	std::cout << outputs[1].DebugString() << "\n";
-//	std::cout << m_outputs[1].scalar<int32>()() << "\n";
-	std::cout << outputs[2].DebugString() << "\n";
-//	std::cout << m_outputs[2].scalar<float>()() << "\n";
-	std::cout << outputs[3].DebugString() << "\n";
-//	std::cout << m_outputs[3].scalar<int64>()() << "\n";
 	int32_t numDetections = static_cast<int32_t>(outputs[0].flat<float>().data()[0]);
 	cv::Mat tmp = *image;
 	cv::Mat outRGB(tmp);
 	std::vector<Detection> detections;
 	for(int32_t i = 0; i < numDetections; ++i) {
-		Detection d;
 		float ymin = outputs[1].flat<float>().data()[i * 4 + 0];
 		float xmin = outputs[1].flat<float>().data()[i * 4 + 1];
 		float ymax = outputs[1].flat<float>().data()[i * 4 + 2];
@@ -244,6 +167,7 @@ void ObjectRecognition3d::onNewRGBImage(ChannelRead<ObjectRecognition3d::RGBImgT
 		cv::Point2i
 		p1(static_cast<int>(xmin * outRGB.size().width), static_cast<int>(ymin * outRGB.size().height)),
 		p2(static_cast<int>(xmax * outRGB.size().width), static_cast<int>(ymax * outRGB.size().height));
+		Detection d;
 		d.box = cv::Rect(p1, p2);
 		cv::rectangle(outRGB, d.box, cv::Scalar(0, 0, 255), 4);
 
@@ -252,7 +176,7 @@ void ObjectRecognition3d::onNewRGBImage(ChannelRead<ObjectRecognition3d::RGBImgT
 		d.type = type;
 
 		std::stringstream topText;
-		topText << m_lookupMap[type] << ": " << std::setprecision(0) << std::fixed << d.confidence * 100;
+		topText << Detection::getName(type) << ": " << std::setprecision(0) << std::fixed << d.confidence * 100;
 		int baseline = 0;
 		double fontScale = 1;
 		int thickness = 2;
@@ -261,7 +185,7 @@ void ObjectRecognition3d::onNewRGBImage(ChannelRead<ObjectRecognition3d::RGBImgT
 		cv::rectangle(outRGB, cv::Rect(textPos + cv::Point2i(0, -textSize.height), textSize), cv::Scalar(0, 0, 255), -1);
 		cv::putText(outRGB, topText.str(), textPos,
 					cv::FONT_HERSHEY_SIMPLEX, fontScale, cv::Scalar(0, 0, 0), thickness);
-		textPos.y += textSize.height+4;
+		textPos.y += textSize.height + 4;
 
 		// get array of depths for region of intererst.
 		cv::Mat roi = m_lastDepthImg(d.box);
@@ -287,6 +211,7 @@ void ObjectRecognition3d::onNewRGBImage(ChannelRead<ObjectRecognition3d::RGBImgT
 		textRelPos << center;
 		cv::putText(outRGB, textRelPos.str(), textPos, cv::FONT_HERSHEY_SIMPLEX, fontScale, cv::Scalar(0, 0, 255), thickness);
 		detections.push_back(d);
+		m_channelDetection.post(d);
 	}
 	RGBImgType rgbImgOut;
 	outRGB.copyTo(rgbImgOut);
@@ -314,104 +239,9 @@ cv::Point3f ObjectRecognition3d::getXYZ(int r, int c, float depth) {
 		float x = (c + 0.5f - cx) * fx * depth_val;
 		float y = (r + 0.5f - cy) * fy * depth_val;
 		float z = depth_val;
-		return cv::Point3f(x,y,z);
+		return cv::Point3f(x, y, z);
 	}
 }
-
-std::map<int, std::string> ObjectRecognition3d::m_lookupMap = {
-	{1,	"person"},
-	{2,	"bicycle"},
-	{3,	"car"},
-	{4,	"motorcycle"},
-	{5,	"airplane"},
-	{6,	"bus"},
-	{7,	"train"},
-	{8,	"truck"},
-	{9,	"boat"},
-	{10,	"traffic light"},
-	{11,	"fire hydrant"},
-	{12,	"street sign"},
-	{13,	"stop sign"},
-	{14,	"parking meter"},
-	{15,	"bench"},
-	{16,	"bird"},
-	{17,	"cat"},
-	{18,	"dog"},
-	{19,	"horse"},
-	{20,	"sheep"},
-	{21,	"cow"},
-	{22,	"elephant"},
-	{23,	"bear"},
-	{24,	"zebra"},
-	{25,	"giraffe"},
-	{26,	"hat"},
-	{27,	"backpack"},
-	{28,	"umbrella"},
-	{29,	"shoe"},
-	{30,	"eye glasses"},
-	{31,	"handbag"},
-	{32,	"tie"},
-	{33,	"suitcase"},
-	{34,	"frisbee"},
-	{35,	"skis"},
-	{36,	"snowboard"},
-	{37,	"sports ball"},
-	{38,	"kite"},
-	{39,	"baseball bat"},
-	{40,	"baseball glove"},
-	{41,	"skateboard"},
-	{42,	"surfboard"},
-	{43,	"tennis racket"},
-	{44,	"bottle"},
-	{45,	"plate"},
-	{46,	"wine glass"},
-	{47,	"cup"},
-	{48,	"fork"},
-	{49,	"knife"},
-	{50,	"spoon"},
-	{51,	"bowl"},
-	{52,	"banana"},
-	{53,	"apple"},
-	{54,	"sandwich"},
-	{55,	"orange"},
-	{56,	"broccoli"},
-	{57,	"carrot"},
-	{58,	"hot dog"},
-	{59,	"pizza"},
-	{60,	"donut"},
-	{61,	"cake"},
-	{62,	"chair"},
-	{63,	"couch"},
-	{64,	"potted plant"},
-	{65,	"bed"},
-	{66,	"mirror"},
-	{67,	"dining table"},
-	{68,	"window"},
-	{69,	"desk"},
-	{70,	"toilet"},
-	{71,	"door"},
-	{72,	"tv"},
-	{73,	"laptop"},
-	{74,	"mouse"},
-	{75,	"remote"},
-	{76,	"keyboard"},
-	{77,	"cell phone"},
-	{78,	"microwave"},
-	{79,	"oven"},
-	{80,	"toaster"},
-	{81,	"sink"},
-	{82,	"refrigerator"},
-	{83,	"blender"},
-	{84,	"book"},
-	{85,	"clock"},
-	{86,	"vase"},
-	{87,	"scissors"},
-	{88,	"teddy bear"},
-	{89,	"hair drier"},
-	{90,	"toothbrush"},
-	{91,	"hair brush"}
-};
-
 
 ///////////////////////////////////////////////////////////////////////////////
 
