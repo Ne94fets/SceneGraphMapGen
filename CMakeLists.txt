@@ -14,6 +14,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 include(ProcessorCount)
 ProcessorCount(NumCores)
 
+### set up external dir
+set(EXTERNAL_DIR "${CMAKE_SOURCE_DIR}/external")
+
 ### set up download dir
 set(DOWNLOAD_DIR "${CMAKE_SOURCE_DIR}/download")
 if(NOT EXISTS "${DOWNLOAD_DIR}")
@@ -25,7 +28,7 @@ if(NOT EXISTS "${DOWNLOAD_DIR}")
 endif()
 
 ### create tensorflow model symlink
-set(MODEL_SYMLINK_TARGET "${CMAKE_SOURCE_DIR}/external/models/faster_rcnn_inception_v2_coco_2018_01_28/frozen_inference_graph.pb")
+set(MODEL_SYMLINK_TARGET "${EXTERNAL_DIR}/models/faster_rcnn_inception_v2_coco_2018_01_28/frozen_inference_graph.pb")
 set(MODEL_SYMLINK_DESTINATION "${CMAKE_SOURCE_DIR}/model.pb")
 if(NOT EXISTS "${MODEL_SYMLINK_DESTINATION}")
 	message(STATUS "Creating symlink to ${MODEL_SYMLINK_TARGET}")
@@ -33,37 +36,45 @@ if(NOT EXISTS "${MODEL_SYMLINK_DESTINATION}")
 endif()
 
 ### check for bazel
-set(BAZEL_DIR "${CMAKE_SOURCE_DIR}/external/bazel")
-set(BAZEL_BIN_DIR "${BAZEL_DIR}/bazel-bin/src/")
+set(BAZEL_BIN_DIR "${EXTERNAL_DIR}/bazel")
 set(BAZEL_EXEC "${BAZEL_BIN_DIR}/bazel")
-if(NOT EXISTS "${BAZEL_DIR}")
-	message(STATUS "Downloading bazel")
+if(NOT EXISTS "${BAZEL_EXEC}")
+	set(BAZEL_DL "${DOWNLOAD_DIR}/bazel")
+	if(NOT EXISTS ${BAZEL_DL})
+		message(STATUS "Downloading bazel 2.2.0")
+		file(DOWNLOAD
+			"https://github.com/bazelbuild/bazel/releases/download/2.2.0/bazel-2.2.0-linux-x86_64"
+			"${BAZEL_DL}"
+			SHOW_PROGRESS)
+	endif()
+	file(MAKE_DIRECTORY ${BAZEL_BIN_DIR})
+	file(COPY "${BAZEL_DL}"
+		DESTINATION ${BAZEL_BIN_DIR}
+		FILE_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
 	execute_process(
-		COMMAND git clone "https://github.com/bazelbuild/bazel.git" ${BAZEL_DIR})
-	message(STATUS "Checkout bazel 2.2.0")
-	execute_process(
-		COMMAND git checkout 2.2.0
-		WORKING_DIRECTORY ${BAZEL_DIR})
-	message(STATUS "Building bazel")
-	execute_process(
-		COMMAND bazel build //src:bazel-dev
-		WORKING_DIRECTORY ${BAZEL_DIR})
-	message(STATUS "Create bazel symlink")
-	execute_process(
-		COMMAND ln -s ${BAZEL_BIN_DIR}/bazel-dev ${BAZEL_BIN_DIR}/bazel
-		WORKING_DIRECTORY ${BAZEL_DIR})
+		COMMAND ${BAZEL_EXEC} --help
+		OUTPUT_VARIABLE EXEC_OUT)
+	message(STATUS ${EXEC_OUT})
 endif()
 
 ### check for tensorflow
-set(TF_DIR "${CMAKE_SOURCE_DIR}/external/tensorflow")
+set(TF_DIR "${EXTERNAL_DIR}/tensorflow")
 if(NOT EXISTS "${TF_DIR}")
     message(STATUS "Downloading Tensorflow")
 	execute_process(
-        COMMAND git clone "https://github.com/tensorflow/tensorflow.git" ${TF_DIR})
+		COMMAND git clone "https://github.com/tensorflow/tensorflow.git" ${TF_DIR}
+		ERROR_VARIABLE EXEC_ERR)
+	if(${RESULT_VARIABLE})
+		message(FATAL_ERROR ${EXEC_ERR})
+	endif()
     message(STATUS "Check out r2.2")
     execute_process(
         COMMAND git checkout r2.2
-        WORKING_DIRECTORY ${TF_DIR})
+		WORKING_DIRECTORY ${TF_DIR}
+		ERROR_VARIABLE EXEC_ERR)
+	if(${RESULT_VARIABLE})
+		message(FATAL_ERROR ${EXEC_ERR})
+	endif()
     message(STATUS "Run ./configure")
     execute_process(
         COMMAND ${CMAKE_COMMAND} -E env PATH=${BAZEL_BIN_DIR}:$ENV{PATH}
@@ -73,7 +84,11 @@ if(NOT EXISTS "${TF_DIR}")
     execute_process(
         COMMAND
 			${BAZEL_EXEC} build //tensorflow:libtensorflow_cc.so
-        WORKING_DIRECTORY ${TF_DIR})
+		WORKING_DIRECTORY ${TF_DIR}
+		ERROR_VARIABLE EXEC_ERR)
+	if(${RESULT_VARIABLE})
+		message(FATAL_ERROR ${EXEC_ERR})
+	endif()
 endif()
 
 INCLUDE_DIRECTORIES("${TF_DIR}/")
@@ -82,7 +97,7 @@ INCLUDE_DIRECTORIES("${TF_DIR}/bazel-tensorflow/external/eigen_archive")
 LINK_DIRECTORIES("${TF_DIR}/bazel-bin/tensorflow")
 
 ### download protobuf 3.8.0
-set(PROTOBUF_DIR "${CMAKE_SOURCE_DIR}/external/protobuf")
+set(PROTOBUF_DIR "${EXTERNAL_DIR}/protobuf")
 if(NOT EXISTS "${PROTOBUF_DIR}")
 	message(STATUS "Downloading protobuf")
 	execute_process(
@@ -153,7 +168,7 @@ LINK_DIRECTORIES("${PROTOBUF_DIR}/lib")
 
 ### download abseil (absl)
 set(BUILD_TESTING OFF)
-set(ABSL_DIR "${CMAKE_SOURCE_DIR}/external/absl")
+set(ABSL_DIR "${EXTERNAL_DIR}/absl")
 if(NOT EXISTS "${ABSL_DIR}")
 	message(STATUS "Downloading abseil")
 	execute_process(
