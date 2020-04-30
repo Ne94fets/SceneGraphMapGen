@@ -64,7 +64,8 @@ if(NOT EXISTS "${TF_DIR}")
         WORKING_DIRECTORY ${TF_DIR})
     message(STATUS "Building //tensorflow:libtensorflow_cc.so")
     execute_process(
-        COMMAND ${BAZEL_EXEC} build //tensorflow:libtensorflow_cc.so
+        COMMAND
+            ${BAZEL_EXEC} build --nokeep_state_after_build //tensorflow:libtensorflow_cc.so
         WORKING_DIRECTORY ${TF_DIR})
 endif()
 
