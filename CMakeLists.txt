@@ -25,7 +25,7 @@ if(NOT EXISTS "${DOWNLOAD_DIR}")
 endif()
 
 ### create tensorflow model symlink
-set(MODEL_SYMLINK_TARGET "${CMAKE_SOURCE_DIR}/external/models/faster_rcnn_inception_v2_coco_2018_01_28/saved_model/saved_model.pb")
+set(MODEL_SYMLINK_TARGET "${CMAKE_SOURCE_DIR}/external/models/faster_rcnn_inception_v2_coco_2018_01_28/frozen_inference_graph.pb")
 set(MODEL_SYMLINK_DESTINATION "${CMAKE_SOURCE_DIR}/model.pb")
 if(NOT EXISTS "${MODEL_SYMLINK_DESTINATION}")
 	message(STATUS "Creating symlink to ${MODEL_SYMLINK_TARGET}")
@@ -35,6 +35,7 @@ endif()
 ### check for bazel
 set(BAZEL_DIR "${CMAKE_SOURCE_DIR}/external/bazel")
 set(BAZEL_BIN_DIR "${BAZEL_DIR}/bazel-bin/src/")
+set(BAZEL_EXEC "${BAZEL_BIN_DIR}/bazel")
 if(NOT EXISTS "${BAZEL_DIR}")
 	message(STATUS "Installing bazel")
 	execute_process(
@@ -49,14 +50,22 @@ endif()
 ### check for tensorflow
 set(TF_DIR "${CMAKE_SOURCE_DIR}/external/tensorflow")
 if(NOT EXISTS "${TF_DIR}")
-	message(STATUS "Installing Tensorflow")
+    message(STATUS "Downloading Tensorflow")
 	execute_process(
-		COMMAND git clone "https://github.com/tensorflow/tensorflow.git" ${TF_DIR})
-	execute_process(
-		COMMAND git checkout r2.1
-		COMMAND ${CMAKE_COMMAND} -E env PATH=${BAZEL_BIN_DIR}:$ENV{PATH} ./configure
-		COMMAND ${CMAKE_COMMAND} -E env PATH=${BAZEL_BIN_DIR}:$ENV{PATH} bazel build //tensorflow:libtensorflow_cc.so
-		WORKING_DIRECTORY ${TF_DIR})
+        COMMAND git clone "https://github.com/tensorflow/tensorflow.git" ${TF_DIR})
+    message(STATUS "Check out r2.2")
+    execute_process(
+        COMMAND git checkout r2.2
+        WORKING_DIRECTORY ${TF_DIR})
+    message(STATUS "Run ./configure")
+    execute_process(
+        COMMAND ${CMAKE_COMMAND} -E env PATH=${BAZEL_BIN_DIR}:$ENV{PATH}
+            echo "\n\n\n\n\n\n\n\n" | ./configure
+        WORKING_DIRECTORY ${TF_DIR})
+    message(STATUS "Building //tensorflow:libtensorflow_cc.so")
+    execute_process(
+        COMMAND ${BAZEL_EXEC} build //tensorflow:libtensorflow_cc.so
+        WORKING_DIRECTORY ${TF_DIR})
 endif()
 
 INCLUDE_DIRECTORIES("${TF_DIR}/")

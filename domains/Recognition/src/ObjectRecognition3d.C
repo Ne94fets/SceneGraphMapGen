@@ -91,7 +91,7 @@ void ObjectRecognition3d::initialize() {
 	}
 
 	tf::GraphDef graphDef;
-	status = tf::ReadBinaryProto(tf::Env::Default(), "frozen_inference_graph.pb", &graphDef);
+	status = tf::ReadBinaryProto(tf::Env::Default(), "model.pb", &graphDef);
 	if(!status.ok()) {
 		throw std::runtime_error(status.ToString());
 	}
