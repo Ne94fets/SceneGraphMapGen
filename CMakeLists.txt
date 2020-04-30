@@ -37,12 +37,19 @@ set(BAZEL_DIR "${CMAKE_SOURCE_DIR}/external/bazel")
 set(BAZEL_BIN_DIR "${BAZEL_DIR}/bazel-bin/src/")
 set(BAZEL_EXEC "${BAZEL_BIN_DIR}/bazel")
 if(NOT EXISTS "${BAZEL_DIR}")
-	message(STATUS "Installing bazel")
+	message(STATUS "Downloading bazel")
 	execute_process(
 		COMMAND git clone "https://github.com/bazelbuild/bazel.git" ${BAZEL_DIR})
+	message(STATUS "Checkout bazel 2.2.0")
 	execute_process(
 		COMMAND git checkout 2.2.0
+		WORKING_DIRECTORY ${BAZEL_DIR})
+	message(STATUS "Building bazel")
+	execute_process(
 		COMMAND bazel build //src:bazel-dev
+		WORKING_DIRECTORY ${BAZEL_DIR})
+	message(STATUS "Create bazel symlink")
+	execute_process(
 		COMMAND ln -s ${BAZEL_BIN_DIR}/bazel-dev ${BAZEL_BIN_DIR}/bazel
 		WORKING_DIRECTORY ${BAZEL_DIR})
 endif()
@@ -65,7 +72,7 @@ if(NOT EXISTS "${TF_DIR}")
     message(STATUS "Building //tensorflow:libtensorflow_cc.so")
     execute_process(
         COMMAND
-            ${BAZEL_EXEC} build --nokeep_state_after_build //tensorflow:libtensorflow_cc.so
+			${BAZEL_EXEC} build //tensorflow:libtensorflow_cc.so
         WORKING_DIRECTORY ${TF_DIR})
 endif()
 
