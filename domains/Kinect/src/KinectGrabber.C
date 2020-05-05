@@ -118,16 +118,16 @@ void KinectGrabber::process(const Timer& timer)
 
 	// depth image may consists of floats
 	m_registration->apply(rgb, depth,
-						  &m_undistortedDepth, &m_registeredRGB,
-						  false);	// do not filter pixels (generates black pixels in image)
+						  &m_undistortedDepth, &m_registeredRGB);
 
-	cv::Mat depthRaw(m_undistortedDepth.height, m_undistortedDepth.width, CV_8SC4);
+	cv::Mat depthRaw(m_undistortedDepth.height, m_undistortedDepth.width, CV_32FC1);
 	depthRaw.data = m_undistortedDepth.data;
-	cv::Mat regDepthChannel[4];
-	cv::split(depthRaw, regDepthChannel);
-	cv::Mat tmpDepth;
-	cv::flip(regDepthChannel[2], tmpDepth, 1);
-	tmpDepth.convertTo(m_imgDepth, CV_8UC1, 1, 128);
+	depthRaw.copyTo(m_imgDepth);
+//	cv::Mat regDepthChannel[4];
+//	cv::split(depthRaw, regDepthChannel);
+//	cv::Mat tmpDepth;
+//	cv::flip(regDepthChannel[2], tmpDepth, 1);
+//	tmpDepth.convertTo(m_imgDepth, CV_8UC1, 1, 128);
 
 	ChannelWrite<DepthImgType> wDepth = m_channelDepth.write();
 	wDepth->value() = m_imgDepth;

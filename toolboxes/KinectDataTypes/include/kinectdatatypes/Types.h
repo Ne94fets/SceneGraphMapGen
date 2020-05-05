@@ -12,8 +12,8 @@ using namespace mira;
 
 namespace kinectdatatypes {
 
-typedef Img<uint8_t, 3> RGBImgType;
-typedef Img<uint8_t, 1> DepthImgType;
+typedef Img<uint8_t, 3>	RGBImgType;
+typedef Img<float, 1>	DepthImgType;
 
 class MIRA_KINECTDATATYPES_EXPORT RegistrationData {
 public:
