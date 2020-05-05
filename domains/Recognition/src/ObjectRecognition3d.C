@@ -140,14 +140,14 @@ void ObjectRecognition3d::onNewRGBImage(ChannelRead<ObjectRecognition3d::RGBImgT
 
 	// Run the session, evaluating our "c" operation from the graph
 	tf::Status status = m_session->Run(
-	inputs, {
-		"num_detections",
-		"detection_boxes",
-		"detection_scores",
-		"detection_classes"
-	},
-	{},
-	&outputs);
+		inputs, {
+			"num_detections",
+			"detection_boxes",
+			"detection_scores",
+			"detection_classes"
+		},
+		{},
+		&outputs);
 	if(!status.ok()) {
 		std::cout << status.ToString() << "\n";
 	}
@@ -157,7 +157,8 @@ void ObjectRecognition3d::onNewRGBImage(ChannelRead<ObjectRecognition3d::RGBImgT
 
 	int32_t numDetections = static_cast<int32_t>(outputs[0].flat<float>().data()[0]);
 	cv::Mat tmp = *image;
-	cv::Mat outRGB(tmp);
+	cv::Mat outRGB;
+	tmp.copyTo(outRGB);
 	std::vector<Detection> detections;
 	for(int32_t i = 0; i < numDetections; ++i) {
 		float ymin = outputs[1].flat<float>().data()[i * 4 + 0];
@@ -165,8 +166,8 @@ void ObjectRecognition3d::onNewRGBImage(ChannelRead<ObjectRecognition3d::RGBImgT
 		float ymax = outputs[1].flat<float>().data()[i * 4 + 2];
 		float xmax = outputs[1].flat<float>().data()[i * 4 + 3];
 		cv::Point2i
-		p1(static_cast<int>(xmin * outRGB.size().width), static_cast<int>(ymin * outRGB.size().height)),
-		p2(static_cast<int>(xmax * outRGB.size().width), static_cast<int>(ymax * outRGB.size().height));
+			p1(static_cast<int>(xmin * outRGB.size().width), static_cast<int>(ymin * outRGB.size().height)),
+			p2(static_cast<int>(xmax * outRGB.size().width), static_cast<int>(ymax * outRGB.size().height));
 		Detection d;
 		d.box = cv::Rect(p1, p2);
 		cv::rectangle(outRGB, d.box, cv::Scalar(0, 0, 255), 4);
