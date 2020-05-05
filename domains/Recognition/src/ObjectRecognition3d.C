@@ -157,7 +157,7 @@ void ObjectRecognition3d::onNewRGBImage(ChannelRead<ObjectRecognition3d::RGBImgT
 
 	int32_t numDetections = static_cast<int32_t>(outputs[0].flat<float>().data()[0]);
 	cv::Mat tmp = *image;
-	cv::Mat outRGB;
+	RGBImgType outRGB;
 	tmp.copyTo(outRGB);
 	std::vector<Detection> detections;
 	for(int32_t i = 0; i < numDetections; ++i) {
@@ -166,8 +166,8 @@ void ObjectRecognition3d::onNewRGBImage(ChannelRead<ObjectRecognition3d::RGBImgT
 		float ymax = outputs[1].flat<float>().data()[i * 4 + 2];
 		float xmax = outputs[1].flat<float>().data()[i * 4 + 3];
 		cv::Point2i
-			p1(static_cast<int>(xmin * outRGB.size().width), static_cast<int>(ymin * outRGB.size().height)),
-			p2(static_cast<int>(xmax * outRGB.size().width), static_cast<int>(ymax * outRGB.size().height));
+			p1(static_cast<int>(xmin * outRGB.width()), static_cast<int>(ymin * outRGB.height())),
+			p2(static_cast<int>(xmax * outRGB.width()), static_cast<int>(ymax * outRGB.height()));
 		Detection d;
 		d.box = cv::Rect(p1, p2);
 		cv::rectangle(outRGB, d.box, cv::Scalar(0, 0, 255), 4);
@@ -184,7 +184,7 @@ void ObjectRecognition3d::onNewRGBImage(ChannelRead<ObjectRecognition3d::RGBImgT
 		auto textSize = cv::getTextSize(topText.str(), cv::FONT_HERSHEY_SIMPLEX, fontScale, thickness, &baseline);
 		auto textPos = p1;
 		cv::rectangle(outRGB, cv::Rect(textPos + cv::Point2i(0, -textSize.height), textSize), cv::Scalar(0, 0, 255), -1);
-		cv::putText(outRGB, topText.str(), textPos,
+		cv::putText(outRGB.getMat(), topText.str(), textPos,
 					cv::FONT_HERSHEY_SIMPLEX, fontScale, cv::Scalar(0, 0, 0), thickness);
 		textPos.y += textSize.height + 4;
 
@@ -210,14 +210,12 @@ void ObjectRecognition3d::onNewRGBImage(ChannelRead<ObjectRecognition3d::RGBImgT
 		cv::Point3f centerRelativeToCam = getXYZ(center.y, center.x, center.z);
 		std::stringstream textRelPos;
 		textRelPos << center;
-		cv::putText(outRGB, textRelPos.str(), textPos, cv::FONT_HERSHEY_SIMPLEX, fontScale, cv::Scalar(0, 0, 255), thickness);
+		cv::putText(outRGB.getMat(), textRelPos.str(), textPos, cv::FONT_HERSHEY_SIMPLEX, fontScale, cv::Scalar(0, 0, 255), thickness);
 		detections.push_back(d);
 		m_channelDetection.post(d);
 	}
-	RGBImgType rgbImgOut;
-	outRGB.copyTo(rgbImgOut);
 	auto wRGBMarked = m_channelRGBMarked.write();
-	wRGBMarked->value() = rgbImgOut;
+	wRGBMarked->value() = outRGB;
 }
 
 void ObjectRecognition3d::onNewDepthImage(ChannelRead<ObjectRecognition3d::DepthImgType> image) {
