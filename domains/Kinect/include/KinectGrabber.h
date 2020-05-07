@@ -82,6 +82,7 @@ public:
 	typedef kinectdatatypes::RegistrationData	RegistrationData;
 	typedef kinectdatatypes::RGBImgType			RGBImgType;
 	typedef kinectdatatypes::DepthImgType		DepthImgType;
+	typedef Img<uint8_t, 1>						DebugDepthImgType;
 
 public:
 
@@ -122,13 +123,17 @@ private:
 	RGBImgType			m_imgRGB;
 	RGBImgType			m_imgRGBFull;
 	DepthImgType		m_imgDepth;
+	DebugDepthImgType	m_imgDepthDebug;
 	DepthImgType		m_imgDepthFull;
+	DebugDepthImgType	m_imgDepthFullDebug;
 
 	Channel<RegistrationData>	m_channelRegistrationData;
 	Channel<RGBImgType>			m_channelRGB;
 	Channel<RGBImgType>			m_channelRGBFull;
 	Channel<DepthImgType>		m_channelDepth;
+	Channel<DebugDepthImgType>	m_channelDepthDebug;
 	Channel<DepthImgType>		m_channelDepthFull;
+	Channel<DebugDepthImgType>	m_channelDepthFullDebug;
 };
 
 } // namespace kinect

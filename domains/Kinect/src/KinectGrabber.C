@@ -104,7 +104,9 @@ void KinectGrabber::initialize()
 	m_channelRGB = publish<RGBImgType>("RGBImage");
 	m_channelRGBFull = publish<RGBImgType>("RGBImageFull");
 	m_channelDepth = publish<DepthImgType>("DepthImage");
+	m_channelDepthDebug = publish<DebugDepthImgType>("DebugDepthImage");
 	m_channelDepthFull = publish<DepthImgType>("DepthImageFull");
+	m_channelDepthFullDebug = publish<DebugDepthImgType>("DebugDepthImageFull");
 }
 
 void KinectGrabber::process(const Timer& timer) {
@@ -143,10 +145,18 @@ void KinectGrabber::process(const Timer& timer) {
 	ChannelWrite<DepthImgType> wDepth = m_channelDepth.write();
 	wDepth->value() = m_imgDepth;
 
+	m_imgDepth.getMat().convertTo(m_imgDepthDebug, CV_8UC1, 1.0 / 1000 / 5 * 255);
+	ChannelWrite<DebugDepthImgType> wDebugDepth = m_channelDepthDebug.write();
+	wDebugDepth->value() = m_imgDepthDebug;
+
 	cv::Mat bigDepth(m_bigdepth.height, m_bigdepth.width, CV_32FC1, m_bigdepth.data);
 	bigDepth.copyTo(m_imgDepthFull);
 	ChannelWrite<DepthImgType> wDepthFull = m_channelDepthFull.write();
 	wDepthFull->value() = m_imgDepthFull;
+
+	m_imgDepthFull.getMat().convertTo(m_imgDepthFullDebug, CV_8UC1, 1.0 / 1000 / 5 * 255);
+	ChannelWrite<DebugDepthImgType> wDebugDepthFull = m_channelDepthFullDebug.write();
+	wDebugDepthFull->value() = m_imgDepthFullDebug;
 
 	cv::Mat bgrxReg(m_registeredRGB.height, m_registeredRGB.width,
 					CV_8UC4, m_registeredRGB.data);
