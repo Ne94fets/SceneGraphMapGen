@@ -116,14 +116,19 @@ private:
 	libfreenect2::FrameMap					m_frames;
 	libfreenect2::Frame						m_undistortedDepth;
 	libfreenect2::Frame						m_registeredRGB;
+	libfreenect2::Frame						m_bigdepth;
 
 	RegistrationData	m_regData;
 	RGBImgType			m_imgRGB;
+	RGBImgType			m_imgRGBFull;
 	DepthImgType		m_imgDepth;
+	DepthImgType		m_imgDepthFull;
 
 	Channel<RegistrationData>	m_channelRegistrationData;
 	Channel<RGBImgType>			m_channelRGB;
+	Channel<RGBImgType>			m_channelRGBFull;
 	Channel<DepthImgType>		m_channelDepth;
+	Channel<DepthImgType>		m_channelDepthFull;
 };
 
 } // namespace kinect

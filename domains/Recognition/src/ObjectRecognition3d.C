@@ -103,8 +103,8 @@ void ObjectRecognition3d::initialize() {
 	}
 
 	subscribe<RegistrationData>("KinectRegData", &ObjectRecognition3d::onRegistrationData);
-	subscribe<RGBImgType>("RGBImage", &ObjectRecognition3d::onNewRGBImage);
-	subscribe<DepthImgType>("DepthImage", &ObjectRecognition3d::onNewDepthImage);
+	subscribe<RGBImgType>("RGBImageFull", &ObjectRecognition3d::onNewRGBImage);
+	subscribe<DepthImgType>("DepthImageFull", &ObjectRecognition3d::onNewDepthImage);
 
 	// TODO: subscribe and publish all required channels
 	//subscribe<Pose2>("Pose", &ObjectRecognition3d::onPoseChanged);
