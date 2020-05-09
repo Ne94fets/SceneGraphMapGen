@@ -184,16 +184,16 @@ INCLUDE_DIRECTORIES("${ABSL_DIR}")
 ### download neo4j
 set(NEO4J_DIR "${EXTERNAL_DIR}/neo4j")
 if(NOT EXISTS "${NEO4J_DIR}")
-    set(NEO4J_NAME "neo4j-community-4.0.4")
+    set(NEO4J_NAME "neo4j-community-3.5.17")
     set(NEO4J_DL "${DOWNLOAD_DIR}/${NEO4J_NAME}-unix.tar.gz")
     if(NOT EXISTS ${NEO4J_DL})
-        message(STATUS "Downloading neo4j 4.0.4")
+        message(STATUS "Downloading ${NEO4J_NAME}")
         file(DOWNLOAD
-            "https://neo4j.com/artifact.php?name=neo4j-community-4.0.4-unix.tar.gz"
+            "https://neo4j.com/artifact.php?name=neo4j-community-3.5.17-unix.tar.gz"
             "${NEO4J_DL}"
             SHOW_PROGRESS)
     endif()
-    message(STATUS "Extracting neo4j")
+    message(STATUS "Extracting ${NEO4J_NAME}")
     execute_process(COMMAND
         ${CMAKE_COMMAND} -E tar xf "${NEO4J_DL}"
         WORKING_DIRECTORY "${DOWNLOAD_DIR}"

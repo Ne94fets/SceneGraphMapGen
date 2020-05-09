@@ -29,4 +29,5 @@ MIRA_ADD_LIBRARY(GraphMap
         MIRABase
         MIRAFramework
         RecognitionDataTypes
+        neo4j-client
 )

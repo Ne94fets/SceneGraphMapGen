@@ -47,6 +47,8 @@
 //#include <transform/Pose.h> // TODO: enable to use Pose2!
 #include <fw/MicroUnit.h>
 
+#include <neo4j-client.h>
+
 #include "recognitiondatatypes/Detection.h"
 
 using namespace mira;
@@ -68,6 +70,7 @@ public:
 public:
 
 	GraphMap();
+	~GraphMap();
 
 	template<typename Reflector>
 	void reflect(Reflector& r) {
@@ -94,6 +97,7 @@ private:
 	// void setPose(const Pose2& pose);
 
 private:
+	neo4j_connection_t* m_connection = nullptr;
 
 	//Channel<Img<>> mChannel;
 };
@@ -102,9 +106,27 @@ private:
 
 GraphMap::GraphMap() {
 	// TODO: further initialization of members, etc.
+	neo4j_client_init();
+}
+
+GraphMap::~GraphMap() {
+	if(m_connection)
+		neo4j_close(m_connection);
+
+	neo4j_client_cleanup();
 }
 
 void GraphMap::initialize() {
+	m_connection = neo4j_connect("bolt://neo4j:neopassword4j@localhost:7687", nullptr, NEO4J_INSECURE);
+	if(!m_connection) {
+		char buf[128];
+		const char* msg = neo4j_strerror(errno, buf, sizeof(buf));
+		std::stringstream ss;
+		ss << "Could not connect to neo4j database: ";
+		ss << msg;
+		throw std::runtime_error(ss.str());
+	}
+
 	subscribe<Detection>("ObjectDetection", &GraphMap::onObjectDetection);
 }
 
@@ -112,6 +134,21 @@ void GraphMap::onObjectDetection(ChannelRead<GraphMap::Detection> detection) {
 	Detection d = *detection;
 	std::string typeName = Detection::getName(d.type);
 	std::cout << "Detected " << typeName << std::endl;
+
+	neo4j_result_stream_t* results = neo4j_run(m_connection, "RETURN 'hello world'", neo4j_null);
+	if(!results)
+		throw std::runtime_error("Could not execute neo4j statement");
+
+	neo4j_result_t* result = neo4j_fetch_next(results);
+	if(!result)
+		throw std::runtime_error("Could not fetch neo4j result");
+
+	neo4j_value_t value = neo4j_result_field(result, 0);
+	char buf[128];
+	neo4j_tostring(value, buf, sizeof(buf));
+	std::cout << buf << std::endl;
+
+	neo4j_close_results(results);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
