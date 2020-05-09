@@ -181,6 +181,93 @@ endif()
 add_subdirectory(${ABSL_DIR})
 INCLUDE_DIRECTORIES("${ABSL_DIR}")
 
+### download neo4j
+set(NEO4J_DIR "${EXTERNAL_DIR}/neo4j")
+if(NOT EXISTS "${NEO4J_DIR}")
+    set(NEO4J_NAME "neo4j-community-4.0.4")
+    set(NEO4J_DL "${DOWNLOAD_DIR}/${NEO4J_NAME}-unix.tar.gz")
+    if(NOT EXISTS ${NEO4J_DL})
+        message(STATUS "Downloading neo4j 4.0.4")
+        file(DOWNLOAD
+            "https://neo4j.com/artifact.php?name=neo4j-community-4.0.4-unix.tar.gz"
+            "${NEO4J_DL}"
+            SHOW_PROGRESS)
+    endif()
+    message(STATUS "Extracting neo4j")
+    execute_process(COMMAND
+        ${CMAKE_COMMAND} -E tar xf "${NEO4J_DL}"
+        WORKING_DIRECTORY "${DOWNLOAD_DIR}"
+        ERROR_VARIABLE EXEC_ERR
+        OUTPUT_VARIABLE EXEC_OUT)
+    message(STATUS ${EXEC_OUT})
+    if(${RESULT_VARIABLE})
+        message(FATAL_ERROR ${EXEC_ERR})
+    endif()
+    message(STATUS "Linking to external dir")
+    file(CREATE_LINK "${DOWNLOAD_DIR}/${NEO4J_NAME}" "${NEO4J_DIR}" SYMBOLIC)
+endif()
+
+### download libneo4j-client
+set(LIBNEO4J_DIR "${EXTERNAL_DIR}/libneo4j-client")
+if(NOT EXISTS "${LIBNEO4J_DIR}")
+    set(LIBNEO4J_NAME "libneo4j-client-master")
+    set(LIBNEO4J_DL "${DOWNLOAD_DIR}/${LIBNEO4J_NAME}.tar.gz")
+    if(NOT EXISTS ${LIBNEO4J_DL})
+        message(STATUS "Downloading ${LIBNEO4J_NAME}")
+        file(DOWNLOAD
+            "https://github.com/cleishm/libneo4j-client/archive/master.zip"
+            "${LIBNEO4J_DL}"
+            SHOW_PROGRESS)
+    endif()
+    message(STATUS "Extracting ${LIBNEO4J_NAME}")
+    execute_process(COMMAND
+        ${CMAKE_COMMAND} -E tar xf "${LIBNEO4J_DL}"
+        WORKING_DIRECTORY "${DOWNLOAD_DIR}"
+        ERROR_VARIABLE EXEC_ERR
+        OUTPUT_VARIABLE EXEC_OUT)
+    message(STATUS ${EXEC_OUT})
+    if(${RESULT_VARIABLE})
+        message(FATAL_ERROR ${EXEC_ERR})
+    endif()
+    message(STATUS "Linking to external dir")
+    file(CREATE_LINK "${DOWNLOAD_DIR}/${LIBNEO4J_NAME}" "${LIBNEO4J_DIR}" SYMBOLIC)
+    message(STATUS "Autogen ${LIBNEO4J_NAME}")
+    execute_process(
+        COMMAND ./autogen.sh
+        WORKING_DIRECTORY ${LIBNEO4J_DIR}
+        ERROR_VARIABLE EXEC_ERR)
+    if(${RESULT_VARIABLE})
+        message(FATAL_ERROR ${EXEC_ERR})
+    endif()
+    message(STATUS "Configure ${LIBNEO4J_NAME}")
+    execute_process(
+        COMMAND ./configure --disable-tools
+        WORKING_DIRECTORY ${LIBNEO4J_DIR}
+        ERROR_VARIABLE EXEC_ERR)
+    if(${RESULT_VARIABLE})
+        message(FATAL_ERROR ${EXEC_ERR})
+    endif()
+    message(STATUS "Cleaning than building ${LIBNEO4J_NAME}")
+    execute_process(
+        COMMAND make clean check -j ${NumCores}
+        WORKING_DIRECTORY ${LIBNEO4J_DIR}
+        ERROR_VARIABLE EXEC_ERR)
+    if(${RESULT_VARIABLE})
+        message(FATAL_ERROR ${EXEC_ERR})
+    endif()
+    message(STATUS "Installing locally ${LIBNEO4J_NAME}")
+    execute_process(
+        COMMAND ${CMAKE_COMMAND} -E env DESTDIR=${LIBNEO4J_DIR} make install
+        WORKING_DIRECTORY ${LIBNEO4J_DIR}
+        ERROR_VARIABLE EXEC_ERR)
+    if(${RESULT_VARIABLE})
+        message(FATAL_ERROR ${EXEC_ERR})
+    endif()
+endif()
+
+INCLUDE_DIRECTORIES("${LIBNEO4J_DIR}/usr/local/include")
+LINK_DIRECTORIES("${LIBNEO4J_DIR}/usr/local/lib")
+
 ### libfreenect2
 INCLUDE_DIRECTORIES("/mnt/hdd/steffen/git/libfreenect2/include")
 LINK_DIRECTORIES("/mnt/hdd/steffen/git/libfreenect2/lib/")
