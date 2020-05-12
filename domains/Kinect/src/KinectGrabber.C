@@ -123,7 +123,9 @@ void KinectGrabber::process(const Timer& timer) {
 	libfreenect2::Frame* depth = m_frames[libfreenect2::Frame::Depth];
 
 	cv::Mat rgbFull(rgb->height, rgb->width, CV_8UC4, rgb->data);
-	cv::cvtColor(rgbFull, m_imgRGBFull, CV_BGRA2BGR);
+	cv::Mat tmpRGBFull(rgbFull.rows, rgbFull.cols, CV_8UC3);
+	cv::cvtColor(rgbFull, tmpRGBFull, CV_BGRA2BGR);
+	cv::flip(tmpRGBFull, m_imgRGBFull, 1);
 	ChannelWrite<RGBImgType> wRGBFull = m_channelRGBFull.write();
 	wRGBFull->value() = m_imgRGBFull;
 
@@ -134,13 +136,7 @@ void KinectGrabber::process(const Timer& timer) {
 
 	cv::Mat depthRaw(m_undistortedDepth.height, m_undistortedDepth.width,
 					 CV_32FC1, m_undistortedDepth.data);
-//	depthRaw.data = m_undistortedDepth.data;
-	depthRaw.copyTo(m_imgDepth);
-//	cv::Mat regDepthChannel[4];
-//	cv::split(depthRaw, regDepthChannel);
-//	cv::Mat tmpDepth;
-//	cv::flip(regDepthChannel[2], tmpDepth, 1);
-//	tmpDepth.convertTo(m_imgDepth, CV_8UC1, 1, 128);
+	cv::flip(depthRaw, m_imgDepth, 1);
 
 	ChannelWrite<DepthImgType> wDepth = m_channelDepth.write();
 	wDepth->value() = m_imgDepth;
@@ -160,9 +156,8 @@ void KinectGrabber::process(const Timer& timer) {
 
 	cv::Mat bgrxReg(m_registeredRGB.height, m_registeredRGB.width,
 					CV_8UC4, m_registeredRGB.data);
-//	bgrxReg.data = m_registeredRGB.data;
 	cv::Mat tmpRGB(bgrxReg.rows, bgrxReg.cols, CV_8UC3);
-	cv::cvtColor(bgrxReg, tmpRGB, CV_BGRA2BGR);
+	cv::cvtColor(bgrxReg, m_imgRGB, CV_BGRA2BGR);
 	cv::flip(tmpRGB, m_imgRGB, 1);
 
 	ChannelWrite<RGBImgType> wRGB = m_channelRGB.write();
