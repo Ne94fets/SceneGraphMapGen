@@ -110,13 +110,15 @@ void KinectGrabber::initialize()
 }
 
 void KinectGrabber::process(const Timer& timer) {
-	auto wRegData = m_channelRegistrationData.write();
-	wRegData->value() = m_regData;
-
 	if(!m_listener.waitForNewFrame(m_frames, 10)) { //m_pollTime.totalMilliseconds()))
 		std::cout << "No new frames in this time frame" << std::endl;
 		return;
 	}
+
+	m_frameNumber++;
+
+	auto wRegData = m_channelRegistrationData.write();
+	wRegData->value() = m_regData;
 
 	libfreenect2::Frame* rgb = m_frames[libfreenect2::Frame::Color];
 	//libfreenect2::Frame* ir = frames[libfreenect2::Frame::Ir];
@@ -126,6 +128,8 @@ void KinectGrabber::process(const Timer& timer) {
 	cv::Mat tmpRGBFull(rgbFull.rows, rgbFull.cols, CV_8UC3);
 	cv::cvtColor(rgbFull, tmpRGBFull, CV_BGRA2BGR);
 	cv::flip(tmpRGBFull, m_imgRGBFull, 1);
+	m_imgRGBFull.frameNumber() = m_frameNumber;
+
 	ChannelWrite<RGBImgType> wRGBFull = m_channelRGBFull.write();
 	wRGBFull->value() = m_imgRGBFull;
 
@@ -137,6 +141,7 @@ void KinectGrabber::process(const Timer& timer) {
 	cv::Mat depthRaw(m_undistortedDepth.height, m_undistortedDepth.width,
 					 CV_32FC1, m_undistortedDepth.data);
 	cv::flip(depthRaw, m_imgDepth, 1);
+	m_imgDepth.frameNumber() = m_frameNumber;
 
 	ChannelWrite<DepthImgType> wDepth = m_channelDepth.write();
 	wDepth->value() = m_imgDepth;
@@ -147,6 +152,8 @@ void KinectGrabber::process(const Timer& timer) {
 
 	cv::Mat bigDepth(m_bigdepth.height, m_bigdepth.width, CV_32FC1, m_bigdepth.data);
 	bigDepth.copyTo(m_imgDepthFull);
+	m_imgDepthFull.frameNumber() = m_frameNumber;
+
 	ChannelWrite<DepthImgType> wDepthFull = m_channelDepthFull.write();
 	wDepthFull->value() = m_imgDepthFull;
 
@@ -159,6 +166,7 @@ void KinectGrabber::process(const Timer& timer) {
 	cv::Mat tmpRGB(bgrxReg.rows, bgrxReg.cols, CV_8UC3);
 	cv::cvtColor(bgrxReg, m_imgRGB, CV_BGRA2BGR);
 	cv::flip(tmpRGB, m_imgRGB, 1);
+	m_imgRGB.frameNumber() = m_frameNumber;
 
 	ChannelWrite<RGBImgType> wRGB = m_channelRGB.write();
 	wRGB->value() = m_imgRGB;

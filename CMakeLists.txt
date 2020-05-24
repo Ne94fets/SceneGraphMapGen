@@ -6,7 +6,7 @@ cmake_minimum_required(VERSION 2.8.4)
 
 project(GraphMap)
 
-set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 ##############################################################################
@@ -267,6 +267,63 @@ endif()
 
 INCLUDE_DIRECTORIES("${LIBNEO4J_DIR}/usr/local/include")
 LINK_DIRECTORIES("${LIBNEO4J_DIR}/usr/local/lib")
+
+### download pcl
+set(PCL_DIR "${EXTERNAL_DIR}/pcl")
+if(NOT EXISTS "${PCL_DIR}")
+    set(PCL_NAME "pcl-pcl-1.11.0")
+    set(PCL_DL "${DOWNLOAD_DIR}/${PCL_NAME}.tar.gz")
+    if(NOT EXISTS ${PCL_DL})
+        message(STATUS "Downloading ${PCL_NAME}")
+        file(DOWNLOAD
+            "https://github.com/PointCloudLibrary/pcl/archive/pcl-1.11.0.tar.gz"
+            "${PCL_DL}"
+            SHOW_PROGRESS)
+    endif()
+    message(STATUS "Extracting ${PCL_NAME}")
+    execute_process(COMMAND
+        ${CMAKE_COMMAND} -E tar xf "${PCL_DL}"
+        WORKING_DIRECTORY "${DOWNLOAD_DIR}"
+        ERROR_VARIABLE EXEC_ERR
+        OUTPUT_VARIABLE EXEC_OUT)
+    message(STATUS ${EXEC_OUT})
+    if(${RESULT_VARIABLE})
+        message(FATAL_ERROR ${EXEC_ERR})
+    endif()
+    message(STATUS "Linking to external dir")
+    file(CREATE_LINK "${DOWNLOAD_DIR}/${PCL_NAME}" "${PCL_DIR}" SYMBOLIC)
+    file(MAKE_DIRECTORY "${PCL_DIR}/build")
+    message(STATUS "Configure ${PCL_NAME}")
+    execute_process(
+        COMMAND cmake -DCMAKE_BUILD_TYPE=Release ..
+        WORKING_DIRECTORY ${PCL_DIR}/build
+        ERROR_VARIABLE EXEC_ERR)
+    if(${RESULT_VARIABLE})
+        message(FATAL_ERROR ${EXEC_ERR})
+    endif()
+    message(STATUS "Building ${PCL_NAME}")
+    execute_process(
+        COMMAND make -j ${NumCores}
+        WORKING_DIRECTORY ${PCL_DIR}/build
+        ERROR_VARIABLE EXEC_ERR)
+    if(${RESULT_VARIABLE})
+        message(FATAL_ERROR ${EXEC_ERR})
+    endif()
+    message(STATUS "Installing locally ${PCL_NAME}")
+    execute_process(
+        COMMAND ${CMAKE_COMMAND} -E env DESTDIR=${PCL_DIR} make install
+        WORKING_DIRECTORY ${PCL_DIR}
+        ERROR_VARIABLE EXEC_ERR)
+    if(${RESULT_VARIABLE})
+        message(FATAL_ERROR ${EXEC_ERR})
+    endif()
+endif()
+
+INCLUDE_DIRECTORIES("${PCL_DIR}/usr/local/include/pcl-1.11")
+LINK_DIRECTORIES("${PCL_DIR}/usr/local/lib")
+
+set(CMAKE_MODULE_PATH "${CMAKE_MODULE_PATH};${PCL_DIR}/usr/local/share/pcl-1.11/Modules")
+find_package("FLANN" REQUIRED)
 
 ### libfreenect2
 INCLUDE_DIRECTORIES("/mnt/hdd/steffen/git/libfreenect2/include")

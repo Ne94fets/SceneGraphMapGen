@@ -7,11 +7,13 @@ Detection::Detection() {
 
 }
 
-Detection::Detection(const cv::Rect& box,
+Detection::Detection(size_t frameNumber,
+					 const cv::Rect& box,
 					 int type,
 					 float confidence,
 					 const cv::Point3f pos)
-	: box(box),
+	: frameNumber(frameNumber),
+	  box(box),
 	  type(type),
 	  confidence(confidence),
 	  pos(pos) {

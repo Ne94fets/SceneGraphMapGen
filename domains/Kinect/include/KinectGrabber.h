@@ -110,6 +110,7 @@ private:
 	// void onPoseChanged(ChannelRead<Pose2> pose);
 
 private:
+	size_t									m_frameNumber = 0;
 	libfreenect2::Freenect2					m_freenect2;
 	libfreenect2::Freenect2Device*			m_dev = nullptr;
 	libfreenect2::Registration*				m_registration = nullptr;

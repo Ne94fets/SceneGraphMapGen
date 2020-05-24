@@ -17,7 +17,8 @@ namespace recognitiondatatypes {
 class MIRA_RECOGNITIONDATATYPES_EXPORT Detection {
 public:
 	Detection();
-	Detection(const cv::Rect& box,
+	Detection(size_t frameNumber,
+			  const cv::Rect& box,
 			  int type,
 			  float confidence,
 			  const cv::Point3f pos);
@@ -38,10 +39,11 @@ public:
 	}
 
 public:
-	cv::Rect box;
-	int type;
-	float confidence;
-	cv::Point3f pos;
+	size_t		frameNumber;
+	cv::Rect	box;
+	int			type;
+	float		confidence;
+	cv::Point3f	pos;
 
 private:
 	static std::map<int, std::string> m_lookupMap;

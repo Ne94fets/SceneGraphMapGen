@@ -124,6 +124,7 @@ void ObjectRecognition3d::onRegistrationData(ChannelRead<ObjectRecognition3d::Re
 }
 
 void ObjectRecognition3d::onNewRGBImage(ChannelRead<ObjectRecognition3d::RGBImgType> image) {
+	m_frameCount++;
 	auto imgSize = image->size();
 
 	tf::Tensor inTensor(tf::DataType::DT_UINT8,
@@ -156,19 +157,23 @@ void ObjectRecognition3d::onNewRGBImage(ChannelRead<ObjectRecognition3d::RGBImgT
 		return;
 
 	int32_t numDetections = static_cast<int32_t>(outputs[0].flat<float>().data()[0]);
-	cv::Mat tmp = *image;
+
 	RGBImgType outRGB;
-	tmp.copyTo(outRGB);
+	image->getMat().copyTo(outRGB);
+	outRGB.frameNumber() = image->frameNumber();
 	std::vector<Detection> detections;
 	for(int32_t i = 0; i < numDetections; ++i) {
 		float ymin = outputs[1].flat<float>().data()[i * 4 + 0];
 		float xmin = outputs[1].flat<float>().data()[i * 4 + 1];
 		float ymax = outputs[1].flat<float>().data()[i * 4 + 2];
 		float xmax = outputs[1].flat<float>().data()[i * 4 + 3];
+
 		cv::Point2i
 			p1(static_cast<int>(xmin * outRGB.width()), static_cast<int>(ymin * outRGB.height())),
 			p2(static_cast<int>(xmax * outRGB.width()), static_cast<int>(ymax * outRGB.height()));
+
 		Detection d;
+		d.frameNumber = image->frameNumber();
 		d.box = cv::Rect(p1, p2);
 		cv::rectangle(outRGB, d.box, cv::Scalar(0, 0, 255), 4);
 
@@ -190,11 +195,12 @@ void ObjectRecognition3d::onNewRGBImage(ChannelRead<ObjectRecognition3d::RGBImgT
 
 		// get array of depths for region of intererst.
 		cv::Mat roi = m_lastDepthImg(d.box);
-		std::vector<cv::Point3i> roiPoints;
+		std::vector<cv::Point3f> roiPoints;
 		for(int y = d.box.y; y < d.box.y + d.box.height; ++y) {
 			for(int x = d.box.x; x < d.box.x + d.box.width; ++x) {
-				uint8_t depth = m_lastDepthImg(x, y);
-				roiPoints.push_back(cv::Point3i(x, y, depth));
+				float depth = m_lastDepthImg(x, y);
+				if(!std::isnan(depth))
+					roiPoints.push_back(cv::Point3f(x, y, depth));
 			}
 		}
 
@@ -202,11 +208,11 @@ void ObjectRecognition3d::onNewRGBImage(ChannelRead<ObjectRecognition3d::RGBImgT
 		auto const q1 = roiPoints.size() / 4;
 		auto const q2 = roiPoints.size() / 2;
 		auto const q3 = q1 + q2;
-		std::sort(roiPoints.begin(), roiPoints.end(), [](const cv::Point3i & lhs, const cv::Point3i & rhs) {
+		std::sort(roiPoints.begin(), roiPoints.end(), [](const cv::Point3f & lhs, const cv::Point3f & rhs) {
 			return lhs.z < rhs.z;
 		});
 		// average points in image space not in world space losing cone of camera intrinsics?
-		cv::Point3i center = std::accumulate(&roiPoints[q1], &roiPoints[q3], cv::Point3i(0, 0, 0)) / float(q3 - q1);
+		cv::Point3i center = std::accumulate(&roiPoints[q1], &roiPoints[q3], cv::Point3f(0, 0, 0)) / float(q3 - q1);
 		cv::Point3f centerRelativeToCam = getXYZ(center.y, center.x, center.z);
 		std::stringstream textRelPos;
 		textRelPos << center;

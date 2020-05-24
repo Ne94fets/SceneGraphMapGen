@@ -34,3 +34,21 @@ MIRA_ADD_LIBRARY(ObjectRecognition3d
         RecognitionDataTypes
         KinectDataTypes
 )
+
+###############################################################################
+
+MIRA_ADD_LIBRARY(PointCloudRegistration
+	SHARED
+	PACKAGE Recognition
+	SOURCE
+		src/PointCloudRegistration.C
+
+	LINK_LIBS
+		MIRABase
+		MIRAFramework
+        KinectDataTypes
+        pcl_common
+        pcl_kdtree
+        pcl_features
+        pcl_registration
+)

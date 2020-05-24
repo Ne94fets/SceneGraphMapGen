@@ -15,6 +15,7 @@ MIRA_ADD_DOCUMENTATION(SceneDesc
 
 INCLUDE_DIRECTORIES(${CMAKE_CURRENT_LIST_DIR}/include)
 INCLUDE_DIRECTORIES(${CMAKE_SOURCE_DIR}/toolboxes/RecognitionDataTypes/include)
+INCLUDE_DIRECTORIES(${CMAKE_SOURCE_DIR}/toolboxes/KinectDataTypes/include)
 
 ###############################################################################
 
@@ -28,6 +29,7 @@ MIRA_ADD_LIBRARY(GraphMap
     LINK_LIBS
         MIRABase
         MIRAFramework
+        KinectDataTypes
         RecognitionDataTypes
         neo4j-client
 )

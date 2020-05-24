@@ -111,6 +111,8 @@ private:
 	Channel<RGBImgType>		m_channelRGBMarked;
 	Channel<Detection>		m_channelDetection;
 
+	size_t	m_frameCount = 0;
+
 	tf::Session*	m_session = nullptr;
 
 	RegistrationData	m_regData;
