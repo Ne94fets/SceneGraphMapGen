@@ -32,13 +32,13 @@ public:
 	template<typename BinaryStream>
 	void reflect(BinarySerializer<BinaryStream>& r) {
 		ImgType::reflect(r);
-		r.write(reinterpret_cast<const uint8_t*>(this), sizeof(NumberedFrame));
+		r.write(reinterpret_cast<const uint8_t*>(&this->m_frameNumber), sizeof(m_frameNumber));
 	}
 
 	template<typename BinaryStream>
 	void reflect(BinaryDeserializer<BinaryStream>& r) {
-		r.read(reinterpret_cast<uint8_t*>(this), sizeof(NumberedFrame));
 		ImgType::reflect(r);
+		r.read(reinterpret_cast<uint8_t*>(&this->m_frameNumber), sizeof(m_frameNumber));
 	}
 
 private:
