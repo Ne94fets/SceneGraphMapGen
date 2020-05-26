@@ -80,7 +80,7 @@ public:
 	typedef Eigen::Matrix4f						TransformType;
 	typedef PointCloud<PointType>				PointCloudType;
 
-	typedef kinectdatatypes::NumberedFrame<TransformType>	NumberedTransform;
+	typedef kinectdatatypes::NumberedType<TransformType>	NumberedTransform;
 
 public:
 

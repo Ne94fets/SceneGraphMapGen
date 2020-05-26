@@ -31,12 +31,14 @@ public:
 
 	template<typename BinaryStream>
 	void reflect(BinarySerializer<BinaryStream>& r) {
+		ImgType::reflect(r);
 		r.write(reinterpret_cast<const uint8_t*>(this), sizeof(NumberedFrame));
 	}
 
 	template<typename BinaryStream>
 	void reflect(BinaryDeserializer<BinaryStream>& r) {
 		r.read(reinterpret_cast<uint8_t*>(this), sizeof(NumberedFrame));
+		ImgType::reflect(r);
 	}
 
 private:
@@ -45,6 +47,35 @@ private:
 
 typedef NumberedFrame<Img<uint8_t, 3>>	RGBImgType;
 typedef NumberedFrame<Img<float, 1>>	DepthImgType;
+
+template<typename _Type>
+class MIRA_KINECTDATATYPES_EXPORT NumberedType
+		: public _Type {
+public:
+	typedef _Type Type;
+
+public:
+	NumberedType() {}
+
+	size_t frameNumber() const { return m_frameNumber; }
+	size_t& frameNumber() { return m_frameNumber; }
+
+public:
+	MIRA_NO_GENERIC_REFLECT_MEMBER(NumberedType)
+
+	template<typename BinaryStream>
+	void reflect(BinarySerializer<BinaryStream>& r) {
+		r.write(reinterpret_cast<const uint8_t*>(this), sizeof(NumberedType));
+	}
+
+	template<typename BinaryStream>
+	void reflect(BinaryDeserializer<BinaryStream>& r) {
+		r.read(reinterpret_cast<uint8_t*>(this), sizeof(NumberedType));
+	}
+
+private:
+	size_t	m_frameNumber;
+};
 
 
 class MIRA_KINECTDATATYPES_EXPORT RegistrationData {
