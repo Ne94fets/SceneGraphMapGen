@@ -63,7 +63,7 @@
 using namespace mira;
 using namespace pcl;
 
-namespace mira { 
+namespace recognition {
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -310,4 +310,4 @@ inline bool PointCloudRegistration::getXYZ(int r, int c, float depth, PointType&
 
 }
 
-MIRA_CLASS_SERIALIZATION(mira::PointCloudRegistration, mira::MicroUnit);
+MIRA_CLASS_SERIALIZATION(recognition::PointCloudRegistration, mira::MicroUnit);
