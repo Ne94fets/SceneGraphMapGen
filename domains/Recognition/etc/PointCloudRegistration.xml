@@ -1,0 +1,7 @@
+<root>
+
+	<unit id="PointCloudRegistration" class="mira::PointCloudRegistration">
+		<!-- add your default parameters here-->
+	</unit>
+
+</root>
