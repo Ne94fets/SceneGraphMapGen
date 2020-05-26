@@ -6,5 +6,8 @@
     <unit id="ObjectRecognition3d" class="recognition::ObjectRecognition3d">
         <!-- add your default parameters here-->
     </unit>
+    <unit id="PointCloudRegistration" class="recognition::PointCloudRegistration">
+        <!-- add your default parameters here-->
+    </unit>
 
 </root>
