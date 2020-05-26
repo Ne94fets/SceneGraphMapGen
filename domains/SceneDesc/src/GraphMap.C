@@ -203,15 +203,21 @@ void GraphMap::analyseDetections() {
 		std::vector<cv::Point3f> relations(cols * cols, cv::Point3f(std::numeric_limits<float>::quiet_NaN(),
 																	std::numeric_limits<float>::quiet_NaN(),
 																	std::numeric_limits<float>::quiet_NaN()));
+
+		std::vector<boost::uuids::uuid> uuidsForDetections;
+		uuidsForDetections.reserve(cols);
 		// insert object and calculate relative positions
-		for(size_t row = 0; row < cols-1; ++row) {
+		for(size_t row = 0; row < cols; ++row) {
 			const auto& d0 = filtered[row];
 
 			// insert object in db
 			const unsigned int numEntries = 2;
 			neo4j_map_entry_t entries[numEntries];
 			std::string detectionType = Detection::getName(d0.type);
+
 			boost::uuids::uuid uuid = boost::uuids::random_generator()();
+			uuidsForDetections.push_back(uuid);
+
 			std::string uuidStr = boost::uuids::to_string(uuid);
 			entries[0] = neo4j_map_kentry(neo4j_string("name"),
 										  neo4j_ustring(uuidStr.c_str(),
@@ -253,10 +259,10 @@ void GraphMap::analyseDetections() {
 
 				const unsigned int numEntries = 2;
 				neo4j_map_entry_t entries[numEntries];
-				std::string detectionName = Detection::getName(d0.type);
+				std::string detectionType = Detection::getName(d0.type);
 				entries[0] = neo4j_map_kentry(neo4j_string("name"),
-											  neo4j_ustring(detectionName.c_str(),
-															static_cast<unsigned int>(detectionName.length())));
+											  neo4j_ustring(detectionType.c_str(),
+															static_cast<unsigned int>(detectionType.length())));
 				neo4j_value_t params = neo4j_map(entries, numEntries);
 				neo4j_result_stream_t* results = neo4j_run(m_connection, "RETURN 'hello world'", params);
 				if(!results)
