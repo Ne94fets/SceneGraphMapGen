@@ -1,5 +1,6 @@
 
 MIRA_REQUIRE_PACKAGE(Kinect)
+MIRA_REQUIRE_PACKAGE(KinectDataTypes)
 
 ###############################################################################
 
@@ -14,7 +15,6 @@ MIRA_ADD_DOCUMENTATION(Kinect
 ###############################################################################
 
 INCLUDE_DIRECTORIES(${CMAKE_CURRENT_LIST_DIR}/include)
-INCLUDE_DIRECTORIES(${CMAKE_SOURCE_DIR}/toolboxes/KinectDataTypes/include)
 
 ###############################################################################
 

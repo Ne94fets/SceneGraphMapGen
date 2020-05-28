@@ -1,5 +1,7 @@
 
 MIRA_REQUIRE_PACKAGE(SceneDesc)
+MIRA_REQUIRE_PACKAGE(KinectDataTypes)
+MIRA_REQUIRE_PACKAGE(RecognitionDataTypes)
 
 ###############################################################################
 
@@ -14,8 +16,6 @@ MIRA_ADD_DOCUMENTATION(SceneDesc
 ###############################################################################
 
 INCLUDE_DIRECTORIES(${CMAKE_CURRENT_LIST_DIR}/include)
-INCLUDE_DIRECTORIES(${CMAKE_SOURCE_DIR}/toolboxes/RecognitionDataTypes/include)
-INCLUDE_DIRECTORIES(${CMAKE_SOURCE_DIR}/toolboxes/KinectDataTypes/include)
 
 ###############################################################################
 
