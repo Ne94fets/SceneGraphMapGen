@@ -170,6 +170,9 @@ void GraphMap::onGlobalTransform(ChannelRead<NumberedTransform> transform) {
 void GraphMap::analyseDetections() {
 	auto toAnalyse = m_detections.front();
 
+	if(m_transforms.empty())
+		return;
+
 	// analyse only detections where global position is known
 	for (auto toAnalyse = m_detections.front();
 		 toAnalyse.front().frameNumber <= m_transforms.back().frameNumber();

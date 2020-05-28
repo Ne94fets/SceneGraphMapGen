@@ -127,7 +127,7 @@ private:
 	bool	m_hasKinectRegData = false;
 
 	PointCloudType::Ptr	m_lastCloud;
-	size_t				m_processInterval = 10;
+	size_t				m_processInterval = 100;
 
 	TransformType		m_globalTransform = TransformType::Identity();
 
@@ -172,7 +172,7 @@ void PointCloudRegistration::initialize() {
 	m_channelLocalTransform = publish<NumberedTransform>("PCLocalTransform");
 
 	subscribe<KinectRegistrationData>("KinectRegData", &PointCloudRegistration::onKinectRegistrationData);
-	subscribe<DepthImgType>("DepthImageFull", &PointCloudRegistration::onDepthImage);
+	subscribe<DepthImgType>("DepthImage", &PointCloudRegistration::onDepthImage);
 }
 
 void PointCloudRegistration::onKinectRegistrationData(ChannelRead<KinectRegistrationData> data) {
@@ -189,9 +189,10 @@ void PointCloudRegistration::onKinectRegistrationData(ChannelRead<KinectRegistra
 void PointCloudRegistration::onDepthImage(ChannelRead<DepthImgType> image) {
 	static size_t intervalCnt = 0;
 	if(!m_lastCloud) {
-
+		m_lastCloud = img2Cloud(*image);
+		return;
 	}
-	if(intervalCnt >= m_processInterval) {
+	if(intervalCnt++ >= m_processInterval) {
 		Eigen::Matrix4f transform;
 		auto newCloud = img2Cloud(*image);
 		pairAlignSrc2Target(newCloud, m_lastCloud, transform, false);
@@ -207,6 +208,8 @@ void PointCloudRegistration::onDepthImage(ChannelRead<DepthImgType> image) {
 		trans.matrix() = m_globalTransform;
 		m_channelGlobalTransfrom.post(trans);
 
+		intervalCnt = 0;
+		m_lastCloud = newCloud;
 	}
 }
 
@@ -270,8 +273,12 @@ PointCloudRegistration::PointCloudType::Ptr PointCloudRegistration::img2Cloud(
 	for(int r = 0; r < img.height(); ++r){
 		int rowIdx = r * img.width();
 		for(int c = 0; c < img.width(); ++c) {
+			auto depth = img.getMat().at<float>(rowIdx + c);
+			if(std::isnan(depth))
+				continue;
+
 			PointType point;
-			if(getXYZ(r, c, img.getMat().at<float>(rowIdx + c), point))
+			if(getXYZ(r, c, depth, point))
 				newCloud->push_back(point);
 		}
 	}
