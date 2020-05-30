@@ -8,7 +8,7 @@ Detection::Detection() {
 }
 
 Detection::Detection(size_t frameNumber,
-					 const cv::Rect& box,
+					 const cv::Rect2f& box,
 					 int type,
 					 float confidence,
 					 const cv::Point3f pos)
@@ -20,7 +20,7 @@ Detection::Detection(size_t frameNumber,
 
 }
 
-std::string Detection::getName(int type) {
+std::string Detection::getTypeName(int type) {
 	auto iter = m_lookupMap.find(type);
 	if(iter == m_lookupMap.end())
 		throw std::runtime_error("type not found");

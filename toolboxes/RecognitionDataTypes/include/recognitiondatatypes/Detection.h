@@ -5,6 +5,10 @@
 
 #include <map>
 
+#include <boost/uuid/uuid.hpp>
+#include <boost/uuid/random_generator.hpp>
+#include <boost/uuid/uuid_io.hpp>
+
 #include <serialization/BinarySerializer.h>
 #include <serialization/NoGenericReflect.h>
 
@@ -18,12 +22,12 @@ class MIRA_RECOGNITIONDATATYPES_EXPORT Detection {
 public:
 	Detection();
 	Detection(size_t frameNumber,
-			  const cv::Rect& box,
+			  const cv::Rect2f& box,
 			  int type,
 			  float confidence,
 			  const cv::Point3f pos);
 
-	static std::string getName(int type);
+	static std::string getTypeName(int type);
 
 public:
 	MIRA_NO_GENERIC_REFLECT_MEMBER(Detection)
@@ -39,11 +43,12 @@ public:
 	}
 
 public:
-	size_t		frameNumber;
-	cv::Rect	box;
-	int			type;
-	float		confidence;
-	cv::Point3f	pos;
+	size_t				frameNumber;
+	cv::Rect2f			box;
+	int					type;
+	float				confidence;
+	cv::Point3f			pos;
+	boost::uuids::uuid	uuid;
 
 private:
 	static std::map<int, std::string> m_lookupMap;

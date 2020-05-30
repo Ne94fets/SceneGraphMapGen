@@ -59,6 +59,7 @@ using namespace mira;
 // forward declarations
 namespace tensorflow {
 	class Session;
+	class Tensor;
 } // namespace tensorflow
 
 namespace tf = tensorflow;
@@ -103,6 +104,14 @@ private:
 
 	cv::Point3f getXYZ(int r, int c, float depth);
 
+	cv::Rect2f	readDetectionRect(const std::vector<tf::Tensor>& outputs, int32_t idx);
+	float		readDetectionConfidence(const std::vector<tf::Tensor>& outputs, int32_t idx);
+	int			readDetectionType(const std::vector<tf::Tensor>& outputs, int32_t idx);
+	Detection	readDetection(const std::vector<tf::Tensor>& outputs, int32_t idx);
+	cv::Point3f	calcPosition(const DepthImgType& depthImg, const cv::Rect2f& rect);
+
+	void process();
+
 	// void onPoseChanged(ChannelRead<Pose2> pose);
 
 	// void setPose(const Pose2& pose);
@@ -111,14 +120,15 @@ private:
 	Channel<RGBImgType>		m_channelRGBMarked;
 	Channel<Detection>		m_channelDetection;
 
-	size_t	m_frameCount = 0;
-
 	tf::Session*	m_session = nullptr;
 
 	RegistrationData	m_regData;
 	bool				m_hasRegData = false;
 
-	DepthImgType		m_lastDepthImg;
+	std::vector<Detection>		m_lastDetections;
+
+	std::queue<DepthImgType>	m_depthQueue;
+	std::queue<RGBImgType>		m_rgbQueue;
 };
 
 } // namespace recognition
