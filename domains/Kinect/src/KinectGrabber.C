@@ -57,7 +57,7 @@ KinectGrabber::KinectGrabber()
 				 libfreenect2::Frame::Depth),
 	  m_undistortedDepth(512, 424, 4),
 	  m_registeredRGB(512, 424, 4),
-	  m_bigdepth(1920, 1080, 4),
+	  m_bigdepth(1920, 1082, 4),
 	  m_imgRGB(512, 424),
 	  m_imgRGBFull(1920, 1080),
 	  m_imgDepth(512, 424),
