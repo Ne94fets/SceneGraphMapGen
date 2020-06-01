@@ -51,6 +51,8 @@
 //#include <transform/Pose.h> // TODO: enable to use Pose2!
 #include <fw/MicroUnit.h>
 
+#include <mutex>
+
 #include <recognitiondatatypes/Detection.h>
 #include <kinectdatatypes/Types.h>
 
@@ -129,6 +131,8 @@ private:
 
 	std::queue<DepthImgType>	m_depthQueue;
 	std::queue<RGBImgType>		m_rgbQueue;
+
+	std::mutex	m_processingMutex;
 };
 
 } // namespace recognition
