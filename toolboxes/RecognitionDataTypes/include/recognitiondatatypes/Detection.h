@@ -54,6 +54,36 @@ private:
 	static std::map<int, std::string> m_lookupMap;
 };
 
+class MIRA_RECOGNITIONDATATYPES_EXPORT DetectionContainer
+		: public std::vector<Detection> {
+public:
+	DetectionContainer();
+
+public:
+	MIRA_NO_GENERIC_REFLECT_MEMBER(Detection)
+
+	template<typename BinaryStream>
+	void reflect(BinarySerializer<BinaryStream>& r) {
+		size_t size = this->size();
+		r.write(&size, sizeof(size_t));
+		for(auto it = this->begin(); it != this->end(); ++it)
+			it->reflect(r);
+	}
+
+	template<typename BinaryStream>
+	void reflect(BinaryDeserializer<BinaryStream>& r) {
+		size_t size;
+		r.read(&size, sizeof(size_t));
+		this->reserve(size);
+		for(size_t i = 0; i < size; ++i) {
+			Detection d;
+			d.reflect(r);
+			this->push_back(d);
+		}
+	}
+
+};
+
 } // namespace recognitiondatatypes
 
 #endif // RECOGNITIONDATATYPES_DETECTION_H

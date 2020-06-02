@@ -81,7 +81,8 @@ public:
 	typedef kinectdatatypes::RGBImgType			RGBImgType;
 	typedef kinectdatatypes::DepthImgType		DepthImgType;
 
-	typedef recognitiondatatypes::Detection	Detection;
+	typedef recognitiondatatypes::Detection				Detection;
+	typedef recognitiondatatypes::DetectionContainer	DetectionContainer;
 
 public:
 	ObjectRecognition3d();
@@ -120,15 +121,15 @@ private:
 	// void setPose(const Pose2& pose);
 
 private:
-	Channel<RGBImgType>					m_channelRGBMarked;
-	Channel<std::vector<Detection>>		m_channelDetections;
+	Channel<RGBImgType>				m_channelRGBMarked;
+	Channel<DetectionContainer>		m_channelDetections;
 
 	tf::Session*	m_session = nullptr;
 
 	RegistrationData	m_regData;
 	bool				m_hasRegData = false;
 
-	std::vector<Detection>		m_lastDetections;
+	DetectionContainer		m_lastDetections;
 
 	std::queue<DepthImgType>	m_depthQueue;
 	std::queue<RGBImgType>		m_rgbQueue;

@@ -112,7 +112,7 @@ void ObjectRecognition3d::initialize() {
 	//subscribe<Pose2>("Pose", &ObjectRecognition3d::onPoseChanged);
 	//mChannel = publish<Img<>>("Image");
 	m_channelRGBMarked = publish<RGBImgType>("RGBImageMarked");
-	m_channelDetections = publish<std::vector<Detection>>("ObjectDetection");
+	m_channelDetections = publish<DetectionContainer>("ObjectDetection");
 
 	publishService(*this);
 }
@@ -195,8 +195,10 @@ cv::Point3f ObjectRecognition3d::calcPosition(const ObjectRecognition3d::DepthIm
 	int ymax = static_cast<int>((rect.y + rect.height) * depthImg.height());
 	int xmin = static_cast<int>(rect.x * depthImg.width());
 	int xmax = static_cast<int>((rect.x + rect.width) * depthImg.width());
-	for(int y = ymin; y < ymax; ++y) {
-		for(int x = xmin; x < xmax; ++x) {
+
+	// do not use full resolution since depth image is upscaled
+	for(int y = ymin; y < ymax; y+=2) {
+		for(int x = xmin; x < xmax; x+=2) {
 			float depth = depthImg(x, y);
 			if(!std::isnan(depth))
 				roiPoints.push_back({x, y, depth});
@@ -319,7 +321,7 @@ void ObjectRecognition3d::process() {
 		rgbImage.getMat().copyTo(outRGB);
 		outRGB.frameNumber() = rgbImage.frameNumber();
 
-		std::vector<Detection> detections;
+		DetectionContainer detections;
 		assert(numDetections >= 0);
 		detections.reserve(static_cast<size_t>(numDetections));
 
@@ -374,11 +376,12 @@ void ObjectRecognition3d::process() {
 		// post detections
 		auto wChannelDetections = m_channelDetections.write();
 		wChannelDetections->value() = detections;
+//		m_channelDetections.post(detections);
 
 		tmpEndTime = std::chrono::system_clock::now();
 		duration = std::chrono::duration_cast<std::chrono::milliseconds>(tmpEndTime - tmpStartTime).count();
 		tmpStartTime = tmpEndTime;
-		std::cout << "Channel post took: " << channelDuration << "ms" << std::endl;
+		std::cout << "Reading detection took: " << channelDuration << "ms" << std::endl;
 		std::cout << "Draw detection took: " << drawDuration << "ms" << std::endl;
 		std::cout << "Processing Detections took: " << duration << "ms" << std::endl;
 

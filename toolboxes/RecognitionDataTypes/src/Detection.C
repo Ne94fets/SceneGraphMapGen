@@ -122,4 +122,8 @@ std::map<int, std::string> Detection::m_lookupMap = {
 	{91,	"hair brush"}
 };
 
+DetectionContainer::DetectionContainer() {
+
+}
+
 } // namespace recognitiondatatypes

@@ -65,8 +65,8 @@ class GraphMap : public MicroUnit {
 	MIRA_OBJECT(GraphMap)
 
 public:
-
-	typedef recognitiondatatypes::Detection	Detection;
+	typedef recognitiondatatypes::Detection				Detection;
+	typedef recognitiondatatypes::DetectionContainer	DetectionContainer;
 
 public:
 
@@ -92,17 +92,15 @@ protected:
 
 private:
 
-	void onObjectDetection(ChannelRead<std::vector<Detection>> detections);
+	void onObjectDetection(ChannelRead<DetectionContainer> detections);
 	// void onPoseChanged(ChannelRead<Pose2> pose);
 
 	// void setPose(const Pose2& pose
 
-	void analyseDetections(const std::vector<Detection>& detections);
+	void analyseDetections(const DetectionContainer& detections);
 
 private:
 	neo4j_connection_t* m_connection = nullptr;
-
-	std::queue<std::vector<Detection>>	m_detections;
 
 	//Channel<Img<>> mChannel;
 };
@@ -111,12 +109,6 @@ private:
 
 GraphMap::GraphMap() {
 	// TODO: further initialization of members, etc.
-
-	// insert default detection array, so its less to check in onObjectDetection
-	m_detections.push(std::vector<Detection>({Detection(std::numeric_limits<size_t>::max(),
-													   cv::Rect(0,0,0,0),
-													   0, 0, cv::Point3f(0,0,0))}));
-
 	neo4j_client_init();
 }
 
@@ -138,10 +130,10 @@ void GraphMap::initialize() {
 		throw std::runtime_error(ss.str());
 	}
 
-	subscribe<Detection>("ObjectDetection", &GraphMap::onObjectDetection);
+	subscribe<DetectionContainer>("ObjectDetection", &GraphMap::onObjectDetection);
 }
 
-void GraphMap::onObjectDetection(ChannelRead<std::vector<Detection>> detections) {
+void GraphMap::onObjectDetection(ChannelRead<DetectionContainer> detections) {
 	for(const auto& detection : detections->value()) {
 		std::string typeName = Detection::getTypeName(detection.type);
 		std::cout << "Detected " << typeName << std::endl;
@@ -150,7 +142,7 @@ void GraphMap::onObjectDetection(ChannelRead<std::vector<Detection>> detections)
 	analyseDetections(detections->value());
 }
 
-void GraphMap::analyseDetections(const std::vector<Detection>& detections) {
+void GraphMap::analyseDetections(const DetectionContainer& detections) {
 	// filter out detections
 	// use detections with highest confidece when overlapping
 	std::vector<Detection> filtered;
