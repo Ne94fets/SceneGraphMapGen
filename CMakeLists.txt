@@ -303,7 +303,7 @@ if(NOT EXISTS "${PCL_DIR}")
     endif()
     message(STATUS "Building ${PCL_NAME}")
     execute_process(
-        COMMAND make -j ${NumCores}
+		COMMAND make -j4
         WORKING_DIRECTORY ${PCL_DIR}/build
         ERROR_VARIABLE EXEC_ERR)
     if(${RESULT_VARIABLE})
@@ -326,8 +326,8 @@ set(CMAKE_MODULE_PATH "${CMAKE_MODULE_PATH};${PCL_DIR}/usr/local/share/pcl-1.11/
 find_package("FLANN" REQUIRED)
 
 ### libfreenect2
-INCLUDE_DIRECTORIES("/mnt/hdd/steffen/git/libfreenect2/include")
-LINK_DIRECTORIES("/mnt/hdd/steffen/git/libfreenect2/lib/")
+INCLUDE_DIRECTORIES("/home/steffen/Software/freenect2/include")
+LINK_DIRECTORIES("/home/steffen/Software/freenect2/lib/")
 
 ##############################################################################
 
