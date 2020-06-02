@@ -112,7 +112,7 @@ void ObjectRecognition3d::initialize() {
 	//subscribe<Pose2>("Pose", &ObjectRecognition3d::onPoseChanged);
 	//mChannel = publish<Img<>>("Image");
 	m_channelRGBMarked = publish<RGBImgType>("RGBImageMarked");
-	m_channelDetection = publish<Detection>("ObjectDetection");
+	m_channelDetections = publish<std::vector<Detection>>("ObjectDetection");
 
 	publishService(*this);
 }
@@ -126,12 +126,18 @@ void ObjectRecognition3d::onRegistrationData(ChannelRead<ObjectRecognition3d::Re
 }
 
 void ObjectRecognition3d::onNewRGBImage(ChannelRead<ObjectRecognition3d::RGBImgType> image) {
-	m_rgbQueue.push(*image);
+	{
+		std::lock_guard<std::mutex> rgbMutex(m_rgbMutex);
+		m_rgbQueue.push(*image);
+	}
 	process();
 }
 
 void ObjectRecognition3d::onNewDepthImage(ChannelRead<ObjectRecognition3d::DepthImgType> image) {
-	m_depthQueue.push(*image);
+	{
+		std::lock_guard<std::mutex> depthMutex(m_depthMutex);
+		m_depthQueue.push(*image);
+	}
 	process();
 }
 
@@ -219,28 +225,45 @@ cv::Point3f ObjectRecognition3d::calcPosition(const ObjectRecognition3d::DepthIm
 	return center;
 }
 
-void ObjectRecognition3d::process() {
-	std::lock_guard<std::mutex> guard(m_processingMutex);
+void ObjectRecognition3d::syncQueues() {
+	{
+		// lock queue before iterating over it
+		std::lock_guard<std::mutex> rgbGuard(m_rgbMutex);
 
-	auto startTime = std::chrono::system_clock::now();
-	while(!m_rgbQueue.empty() && !m_depthQueue.empty()) {
-		auto tmpStartTime = std::chrono::system_clock::now();
 		// pop rgb images before next depth image
 		while(!m_rgbQueue.empty() && m_rgbQueue.front().frameNumber() < m_depthQueue.front().frameNumber()) {
 			std::cout << "Dropping RGB image. FrameNumber: " << m_rgbQueue.front().frameNumber() << std::endl;
 			m_rgbQueue.pop();
 		}
+	}
 
-		if(m_rgbQueue.empty())
-			return;
+	if(m_rgbQueue.empty())
+		return;
+
+	{
+		// lock queue before iterating over it
+		std::lock_guard<std::mutex> depthGuard(m_depthMutex);
 
 		// pop depth images before next rgb image
 		while(!m_depthQueue.empty() && m_depthQueue.front().frameNumber() < m_rgbQueue.front().frameNumber()) {
 			std::cout << "Dropping depth image. FrameNumber: " << m_depthQueue.front().frameNumber() << std::endl;
 			m_depthQueue.pop();
 		}
+	}
+}
 
-		if(m_depthQueue.empty())
+void ObjectRecognition3d::process() {
+	std::lock_guard<std::mutex> guard(m_processingMutex);
+
+	auto startTime = std::chrono::system_clock::now();
+	while(!m_rgbQueue.empty() && !m_depthQueue.empty()) {
+		auto tmpStartTime = std::chrono::system_clock::now();
+
+		// sync queues
+		syncQueues();
+
+		// return if any of the queues is empty
+		if(m_rgbQueue.empty() || m_depthQueue.empty())
 			return;
 
 		// rgb and depth image should be synchronized and have same frame number now
@@ -295,8 +318,15 @@ void ObjectRecognition3d::process() {
 		RGBImgType outRGB;
 		rgbImage.getMat().copyTo(outRGB);
 		outRGB.frameNumber() = rgbImage.frameNumber();
+
 		std::vector<Detection> detections;
+		assert(numDetections >= 0);
+		detections.reserve(static_cast<size_t>(numDetections));
+
+		long channelDuration = 0;
+		long drawDuration = 0;
 		for(int32_t i = 0; i < numDetections; ++i) {
+			auto channelStart = std::chrono::system_clock::now();
 			// read out a detection from output tensors
 			Detection d = readDetection(outputs, i);
 
@@ -308,9 +338,13 @@ void ObjectRecognition3d::process() {
 
 			// save detection to array and post it to channel
 			detections.push_back(d);
-			m_channelDetection.post(d);
+//			auto wChannelDetection = m_channelDetections.write();
+//			wChannelDetection->value() = d;
+//			m_channelDetection.post(d);
+			auto channelEnd = std::chrono::system_clock::now();
+			channelDuration += std::chrono::duration_cast<std::chrono::milliseconds>(channelEnd - channelStart).count();
 
-
+			auto drawStart = std::chrono::system_clock::now();
 			// draw detection to an debug output image
 			cv::Rect resizedRect(static_cast<int>(d.box.x * outRGB.width()),
 								 static_cast<int>(d.box.y * outRGB.height()),
@@ -333,11 +367,19 @@ void ObjectRecognition3d::process() {
 			std::stringstream textRelPos;
 			textRelPos << d.pos;
 			cv::putText(outRGB.getMat(), textRelPos.str(), textPos, cv::FONT_HERSHEY_SIMPLEX, fontScale, cv::Scalar(0, 0, 255), thickness);
+			auto drawEnd = std::chrono::system_clock::now();
+			drawDuration += std::chrono::duration_cast<std::chrono::milliseconds>(drawEnd - drawStart).count();
 		}
+
+		// post detections
+		auto wChannelDetections = m_channelDetections.write();
+		wChannelDetections->value() = detections;
 
 		tmpEndTime = std::chrono::system_clock::now();
 		duration = std::chrono::duration_cast<std::chrono::milliseconds>(tmpEndTime - tmpStartTime).count();
 		tmpStartTime = tmpEndTime;
+		std::cout << "Channel post took: " << channelDuration << "ms" << std::endl;
+		std::cout << "Draw detection took: " << drawDuration << "ms" << std::endl;
 		std::cout << "Processing Detections took: " << duration << "ms" << std::endl;
 
 		auto wRGBMarked = m_channelRGBMarked.write();
@@ -345,8 +387,14 @@ void ObjectRecognition3d::process() {
 
 		m_lastDetections = detections;
 
-		m_rgbQueue.pop();
-		m_depthQueue.pop();
+		{
+			std::lock_guard<std::mutex> rgbGuard(m_rgbMutex);
+			m_rgbQueue.pop();
+		}
+		{
+			std::lock_guard<std::mutex> depthGuard(m_depthMutex);
+			m_depthQueue.pop();
+		}
 
 		tmpEndTime = std::chrono::system_clock::now();
 		duration = std::chrono::duration_cast<std::chrono::milliseconds>(tmpEndTime - tmpStartTime).count();
@@ -356,7 +404,7 @@ void ObjectRecognition3d::process() {
 
 	auto endTime = std::chrono::system_clock::now();
 	auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
-	std::cout << "Detecting took: " << duration << "ms" << std::endl;
+	std::cout << "Detectionprocess took: " << duration << "ms" << std::endl;
 }
 
 ///////////////////////////////////////////////////////////////////////////////

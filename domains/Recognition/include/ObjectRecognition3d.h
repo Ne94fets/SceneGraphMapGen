@@ -112,6 +112,7 @@ private:
 	Detection	readDetection(const std::vector<tf::Tensor>& outputs, int32_t idx);
 	cv::Point3f	calcPosition(const DepthImgType& depthImg, const cv::Rect2f& rect);
 
+	void syncQueues();
 	void process();
 
 	// void onPoseChanged(ChannelRead<Pose2> pose);
@@ -119,8 +120,8 @@ private:
 	// void setPose(const Pose2& pose);
 
 private:
-	Channel<RGBImgType>		m_channelRGBMarked;
-	Channel<Detection>		m_channelDetection;
+	Channel<RGBImgType>					m_channelRGBMarked;
+	Channel<std::vector<Detection>>		m_channelDetections;
 
 	tf::Session*	m_session = nullptr;
 
@@ -133,6 +134,8 @@ private:
 	std::queue<RGBImgType>		m_rgbQueue;
 
 	std::mutex	m_processingMutex;
+	std::mutex	m_depthMutex;
+	std::mutex	m_rgbMutex;
 };
 
 } // namespace recognition

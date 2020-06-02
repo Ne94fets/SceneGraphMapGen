@@ -92,12 +92,12 @@ protected:
 
 private:
 
-	void onObjectDetection(ChannelRead<Detection> detection);
+	void onObjectDetection(ChannelRead<std::vector<Detection>> detections);
 	// void onPoseChanged(ChannelRead<Pose2> pose);
 
 	// void setPose(const Pose2& pose
 
-	void analyseDetections();
+	void analyseDetections(const std::vector<Detection>& detections);
 
 private:
 	neo4j_connection_t* m_connection = nullptr;
@@ -141,33 +141,26 @@ void GraphMap::initialize() {
 	subscribe<Detection>("ObjectDetection", &GraphMap::onObjectDetection);
 }
 
-void GraphMap::onObjectDetection(ChannelRead<GraphMap::Detection> detection) {
-	std::string typeName = Detection::getTypeName(detection->type);
-	std::cout << "Detected " << typeName << std::endl;
-
-	if (m_detections.back().front().frameNumber != detection->frameNumber) {
-		m_detections.push(std::vector<Detection>({detection}));
-		analyseDetections();
-		return;
+void GraphMap::onObjectDetection(ChannelRead<std::vector<Detection>> detections) {
+	for(const auto& detection : detections->value()) {
+		std::string typeName = Detection::getTypeName(detection.type);
+		std::cout << "Detected " << typeName << std::endl;
 	}
 
-	m_detections.back().push_back(detection);
+	analyseDetections(detections->value());
 }
 
-void GraphMap::analyseDetections() {
-	auto toAnalyse = m_detections.front();
-	 m_detections.pop();
-
+void GraphMap::analyseDetections(const std::vector<Detection>& detections) {
 	// filter out detections
 	// use detections with highest confidece when overlapping
 	std::vector<Detection> filtered;
-	filtered.reserve(toAnalyse.size());
+	filtered.reserve(detections.size());
 
-	for(size_t i = 0; i < toAnalyse.size(); ++i) {
-		const auto& d0 = toAnalyse[i];
+	for(size_t i = 0; i < detections.size(); ++i) {
+		const auto& d0 = detections[i];
 		bool overlapWin = true;
-		for(size_t j = 0; j < toAnalyse.size(); ++j) {
-			const auto& d1 = toAnalyse[j];
+		for(size_t j = 0; j < detections.size(); ++j) {
+			const auto& d1 = detections[j];
 			if(d1.confidence < d0.confidence)
 				continue;
 			if(d0.box.x + d0.box.width <= d1.box.x ||
