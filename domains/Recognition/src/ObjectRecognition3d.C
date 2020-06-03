@@ -254,6 +254,39 @@ void ObjectRecognition3d::syncQueues() {
 	}
 }
 
+std::vector<tensorflow::Tensor> ObjectRecognition3d::detect(const ObjectRecognition3d::RGBImgType& rgbImage) {
+	auto imgSize = rgbImage.size();
+
+	tf::Tensor inTensor(tf::DataType::DT_UINT8,
+						tf::TensorShape({1, imgSize.height(), imgSize.width(), 3}),
+						new Vector2TensorBuffer(
+							const_cast<void*>(reinterpret_cast<const void*>(rgbImage.data())),
+							static_cast<size_t>(imgSize.width() * imgSize.height()) *
+							3 * sizeof(uint8_t)));
+	std::vector<std::pair<std::string, tf::Tensor>> inputs = {
+		{"image_tensor", inTensor},
+	};
+
+	std::vector<tf::Tensor> outputs;
+
+	// Run the session, evaluating our "c" operation from the graph
+	tf::Status status = m_session->Run(
+		inputs, {
+			"num_detections",
+			"detection_boxes",
+			"detection_scores",
+			"detection_classes"
+		},
+		{},
+		&outputs);
+
+	if(!status.ok()) {
+		std::cout << status.ToString() << "\n";
+	}
+
+	return outputs;
+}
+
 void ObjectRecognition3d::process() {
 	std::lock_guard<std::mutex> guard(m_processingMutex);
 
@@ -273,48 +306,18 @@ void ObjectRecognition3d::process() {
 		const auto& depthImage = m_depthQueue.front();
 		assert(rgbImage.frameNumber() == depthImage.frameNumber());
 
-		auto imgSize = rgbImage.size();
-
-		tf::Tensor inTensor(tf::DataType::DT_UINT8,
-							tf::TensorShape({1, imgSize.height(), imgSize.width(), 3}),
-							new Vector2TensorBuffer(
-								const_cast<void*>(reinterpret_cast<const void*>(rgbImage.data())),
-								static_cast<size_t>(imgSize.width() * imgSize.height()) *
-								3 * sizeof(uint8_t)));
-		std::vector<std::pair<std::string, tf::Tensor>> inputs = {
-			{"image_tensor", inTensor},
-		};
-
-		std::vector<tf::Tensor> outputs;
+		// detect objects on rgb image
+		auto outputs = detect(rgbImage);
 
 		auto tmpEndTime = std::chrono::system_clock::now();
 		auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(tmpEndTime - tmpStartTime).count();
 		tmpStartTime = tmpEndTime;
-		std::cout << "Preprocessing took: " << duration << "ms" << std::endl;
-
-		// Run the session, evaluating our "c" operation from the graph
-		tf::Status status = m_session->Run(
-			inputs, {
-				"num_detections",
-				"detection_boxes",
-				"detection_scores",
-				"detection_classes"
-			},
-			{},
-			&outputs);
-
-		tmpEndTime = std::chrono::system_clock::now();
-		duration = std::chrono::duration_cast<std::chrono::milliseconds>(tmpEndTime - tmpStartTime).count();
-		tmpStartTime = tmpEndTime;
 		std::cout << "Detecting took: " << duration << "ms" << std::endl;
-
-		if(!status.ok()) {
-			std::cout << status.ToString() << "\n";
-		}
 
 		if(outputs.empty())
 			return;
 
+		// process detections
 		int32_t numDetections = static_cast<int32_t>(outputs[0].flat<float>().data()[0]);
 
 		RGBImgType outRGB;

@@ -114,6 +114,7 @@ private:
 	cv::Point3f	calcPosition(const DepthImgType& depthImg, const cv::Rect2f& rect);
 
 	void syncQueues();
+	std::vector<tf::Tensor> detect(const RGBImgType& rgbImage);
 	void process();
 
 	// void onPoseChanged(ChannelRead<Pose2> pose);
