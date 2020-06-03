@@ -36,14 +36,16 @@ if(NOT EXISTS "${MODEL_SYMLINK_DESTINATION}")
 endif()
 
 ### check for bazel
+### use a tested bazel - tensorflow combination from
+### https://www.tensorflow.org/install/source#tested_build_configurations
 set(BAZEL_BIN_DIR "${EXTERNAL_DIR}/bazel")
 set(BAZEL_EXEC "${BAZEL_BIN_DIR}/bazel")
 if(NOT EXISTS "${BAZEL_EXEC}")
 	set(BAZEL_DL "${DOWNLOAD_DIR}/bazel")
 	if(NOT EXISTS ${BAZEL_DL})
-		message(STATUS "Downloading bazel 2.2.0")
+        message(STATUS "Downloading bazel 2.0.0")
 		file(DOWNLOAD
-			"https://github.com/bazelbuild/bazel/releases/download/2.2.0/bazel-2.2.0-linux-x86_64"
+            "https://github.com/bazelbuild/bazel/releases/download/2.0.0/bazel-2.0.0-linux-x86_64"
 			"${BAZEL_DL}"
 			SHOW_PROGRESS)
 	endif()
@@ -83,7 +85,7 @@ if(NOT EXISTS "${TF_DIR}")
     message(STATUS "Building //tensorflow:libtensorflow_cc.so")
     execute_process(
         COMMAND
-            ${BAZEL_EXEC} build --compilation_mode opt //tensorflow:libtensorflow_cc.so
+            ${BAZEL_EXEC} build --compilation_mode opt --copt=-O3 //tensorflow:libtensorflow_cc.so
 		WORKING_DIRECTORY ${TF_DIR}
 		ERROR_VARIABLE EXEC_ERR)
 	if(${RESULT_VARIABLE})
@@ -94,6 +96,7 @@ endif()
 INCLUDE_DIRECTORIES("${TF_DIR}/")
 INCLUDE_DIRECTORIES("${TF_DIR}/bazel-out/host/bin")
 INCLUDE_DIRECTORIES("${TF_DIR}/bazel-tensorflow/external/eigen_archive")
+INCLUDE_DIRECTORIES("${TF_DIR}/bazel-tensorflow/external/com_google_absl")
 LINK_DIRECTORIES("${TF_DIR}/bazel-bin/tensorflow")
 
 ### download protobuf 3.8.0
@@ -165,21 +168,6 @@ if(NOT EXISTS "${PROTOBUF_DIR}")
 endif()
 INCLUDE_DIRECTORIES("${PROTOBUF_DIR}/include")
 LINK_DIRECTORIES("${PROTOBUF_DIR}/lib")
-
-### download abseil (absl)
-set(BUILD_TESTING OFF)
-set(ABSL_DIR "${EXTERNAL_DIR}/absl")
-if(NOT EXISTS "${ABSL_DIR}")
-	message(STATUS "Downloading abseil")
-	execute_process(
-		COMMAND git clone "https://github.com/abseil/abseil-cpp.git" ${ABSL_DIR})
-	message(STATUS "Check out 20200225.1")
-	execute_process(
-		COMMAND git checkout 20200225.1
-		WORKING_DIRECTORY ${ABSL_DIR})
-endif()
-add_subdirectory(${ABSL_DIR})
-INCLUDE_DIRECTORIES("${ABSL_DIR}")
 
 ### download neo4j
 set(NEO4J_DIR "${EXTERNAL_DIR}/neo4j")
