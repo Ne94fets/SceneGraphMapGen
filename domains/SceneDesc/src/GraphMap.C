@@ -143,6 +143,9 @@ void GraphMap::onObjectDetection(ChannelRead<DetectionContainer> detections) {
 }
 
 void GraphMap::analyseDetections(const DetectionContainer& detections) {
+	if(detections.empty())
+		return;
+
 	// filter out detections
 	// use detections with highest confidece when overlapping
 	std::vector<Detection> filtered;
