@@ -291,7 +291,7 @@ if(NOT EXISTS "${PCL_DIR}")
     endif()
     message(STATUS "Building ${PCL_NAME}")
     execute_process(
-		COMMAND make -j4
+        COMMAND make -j ${NumCores}
         WORKING_DIRECTORY ${PCL_DIR}/build
         ERROR_VARIABLE EXEC_ERR)
     if(${RESULT_VARIABLE})
@@ -314,8 +314,58 @@ set(CMAKE_MODULE_PATH "${CMAKE_MODULE_PATH};${PCL_DIR}/usr/local/share/pcl-1.11/
 find_package("FLANN" REQUIRED)
 
 ### libfreenect2
-INCLUDE_DIRECTORIES("/home/steffen/Software/freenect2/include")
-LINK_DIRECTORIES("/home/steffen/Software/freenect2/lib/")
+set(LIBFREENECT2_DIR "${EXTERNAL_DIR}/libfreenect2")
+if(NOT EXISTS "${LIBFREENECT2_DIR}")
+    set(LIBFREENECT2_NAME "libfreenect2-fd64c5d9b214df6f6a55b4419357e51083f15d93")
+    set(LIBFREENECT2_DL "${DOWNLOAD_DIR}/fd64c5d9b214df6f6a55b4419357e51083f15d93.zip")
+    if(NOT EXISTS ${LIBFREENECT2_DL})
+        message(STATUS "Downloading ${LIBFREENECT2_NAME}")
+        file(DOWNLOAD
+            "https://github.com/OpenKinect/libfreenect2/archive/fd64c5d9b214df6f6a55b4419357e51083f15d93.zip"
+            "${LIBFREENECT2_DL}"
+            SHOW_PROGRESS)
+    endif()
+    message(STATUS "Extracting ${LIBFREENECT2_NAME}")
+    execute_process(COMMAND
+        ${CMAKE_COMMAND} -E tar xf "${LIBFREENECT2_DL}"
+        WORKING_DIRECTORY "${DOWNLOAD_DIR}"
+        ERROR_VARIABLE EXEC_ERR
+        OUTPUT_VARIABLE EXEC_OUT)
+    message(STATUS ${EXEC_OUT})
+    if(${RESULT_VARIABLE})
+        message(FATAL_ERROR ${EXEC_ERR})
+    endif()
+    message(STATUS "Moving to external dir")
+    file(RENAME "${DOWNLOAD_DIR}/${LIBFREENECT2_NAME}" "${LIBFREENECT2_DIR}")
+    file(MAKE_DIRECTORY "${LIBFREENECT2_DIR}/build")
+    message(STATUS "Configure ${LIBFREENECT2_NAME}")
+    execute_process(
+        COMMAND cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=${LIBFREENECT2_DIR} ..
+        WORKING_DIRECTORY ${LIBFREENECT2_DIR}/build
+        ERROR_VARIABLE EXEC_ERR)
+    if(${RESULT_VARIABLE})
+        message(FATAL_ERROR ${EXEC_ERR})
+    endif()
+    message(STATUS "Building ${LIBFREENECT2_NAME}")
+    execute_process(
+        COMMAND make -j ${NumCores}
+        WORKING_DIRECTORY ${LIBFREENECT2_DIR}/build
+        ERROR_VARIABLE EXEC_ERR)
+    if(${RESULT_VARIABLE})
+        message(FATAL_ERROR ${EXEC_ERR})
+    endif()
+    message(STATUS "Installing locally ${LIBFREENECT2_NAME}")
+    execute_process(
+        COMMAND make install
+        WORKING_DIRECTORY ${LIBFREENECT2_DIR}/build
+        ERROR_VARIABLE EXEC_ERR)
+    if(${RESULT_VARIABLE})
+        message(FATAL_ERROR ${EXEC_ERR})
+    endif()
+endif()
+
+INCLUDE_DIRECTORIES("${LIBFREENECT2_DIR}/include")
+LINK_DIRECTORIES("${LIBFREENECT2_DIR}/lib")
 
 ##############################################################################
 
