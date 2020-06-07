@@ -133,7 +133,6 @@ void KinectGrabber::process(const Timer& timer) {
 	ChannelWrite<RGBImgType> wRGBFull = m_channelRGBFull.write();
 	wRGBFull->value() = m_imgRGBFull;
 
-	// depth image may consists of floats
 	m_registration->apply(rgb, depth,
 						  &m_undistortedDepth, &m_registeredRGB, true,
 						  &m_bigdepth);
@@ -151,7 +150,8 @@ void KinectGrabber::process(const Timer& timer) {
 	wDebugDepth->value() = m_imgDepthDebug;
 
 	cv::Mat bigDepth(m_bigdepth.height, m_bigdepth.width, CV_32FC1, m_bigdepth.data);
-	bigDepth.copyTo(m_imgDepthFull);
+	//bigDepth.copyTo(m_imgDepthFull);
+	cv::flip(bigDepth, m_imgDepthFull, 1);
 	m_imgDepthFull.frameNumber() = m_frameNumber;
 
 	ChannelWrite<DepthImgType> wDepthFull = m_channelDepthFull.write();
