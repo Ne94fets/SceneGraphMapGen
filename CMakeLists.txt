@@ -77,15 +77,29 @@ if(NOT EXISTS "${TF_DIR}")
 	if(${RESULT_VARIABLE})
 		message(FATAL_ERROR ${EXEC_ERR})
 	endif()
-    message(STATUS "Run ./configure")
-    execute_process(
-        COMMAND ${CMAKE_COMMAND} -E env PATH=${BAZEL_BIN_DIR}:$ENV{PATH}
-            echo "\n\n\n\n\n\n\n\n" | ./configure
-        WORKING_DIRECTORY ${TF_DIR})
+#    message(STATUS "Run ./configure")
+#    execute_process(
+#        COMMAND ${CMAKE_COMMAND} -E env PATH="${BAZEL_BIN_DIR}:$ENV{PATH}"
+#            bash echo "\n\n\n\n\n\n\n\n" | ./configure
+#        WORKING_DIRECTORY ${TF_DIR}
+#        ERROR_VARIABLE EXEC_ERR
+#        OUTPUT_VARIABLE EXEC_OUT)
+#    message(STATUS "${EXEC_OUT}")
+#    if(${RESULT_VARIABLE})
+#        message(FATAL_ERROR ${EXEC_ERR})
+#    endif()
     message(STATUS "Building //tensorflow:libtensorflow_cc.so")
     execute_process(
         COMMAND
-            ${BAZEL_EXEC} build --compilation_mode opt --copt=-O3 //tensorflow:libtensorflow_cc.so
+            ${BAZEL_EXEC} build
+                --config=xla
+                --copt=-march=native
+                --copt=-Wno-sign-compare
+                --host_copt=-march=native
+                --define with_default_optimizations=true
+                --copt=-O3
+                --action_env TF_CONFIGURE_IOS="0"
+                //tensorflow:libtensorflow_cc.so
 		WORKING_DIRECTORY ${TF_DIR}
 		ERROR_VARIABLE EXEC_ERR)
 	if(${RESULT_VARIABLE})
