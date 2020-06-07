@@ -164,7 +164,7 @@ void KinectGrabber::process(const Timer& timer) {
 	cv::Mat bgrxReg(m_registeredRGB.height, m_registeredRGB.width,
 					CV_8UC4, m_registeredRGB.data);
 	cv::Mat tmpRGB(bgrxReg.rows, bgrxReg.cols, CV_8UC3);
-	cv::cvtColor(bgrxReg, m_imgRGB, CV_BGRA2BGR);
+	cv::cvtColor(bgrxReg, tmpRGB, CV_BGRA2BGR);
 	cv::flip(tmpRGB, m_imgRGB, 1);
 	m_imgRGB.frameNumber() = m_frameNumber;
 
