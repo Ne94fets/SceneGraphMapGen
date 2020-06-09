@@ -127,7 +127,7 @@ private:
 	bool	m_hasKinectRegData = false;
 
 	PointCloudType::Ptr	m_lastCloud;
-	size_t				m_processInterval = 100;
+	size_t				m_processInterval = 10;
 
 	TransformType		m_globalTransform = TransformType::Identity();
 
@@ -195,7 +195,11 @@ void PointCloudRegistration::onDepthImage(ChannelRead<DepthImgType> image) {
 	if(intervalCnt++ >= m_processInterval) {
 		Eigen::Matrix4f transform;
 		auto newCloud = img2Cloud(*image);
+		auto startTime = std::chrono::system_clock::now();
 		pairAlignSrc2Target(newCloud, m_lastCloud, transform, false);
+		auto endTime = std::chrono::system_clock::now();
+		auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime-startTime).count();
+		std::cout << "PCL align took: " << duration << "ms" << std::endl;
 
 		// publish local transfrom
 		NumberedTransform trans;

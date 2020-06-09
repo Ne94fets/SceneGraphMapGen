@@ -48,12 +48,15 @@
 
 #include <assert.h>
 
+#include <algorithm>
 #include <exception>
 #include <iomanip>
 
 #include "tensorflow/core/public/session.h"
 #include "tensorflow/core/platform/env.h"
 
+#include <opencv2/opencv.hpp>
+#include <opencv2/tracking.hpp>
 #include <opencv2/imgproc.hpp>
 
 namespace tf = tensorflow;
@@ -161,6 +164,10 @@ cv::Point3f ObjectRecognition3d::getXYZ(int r, int c, float depth) {
 	}
 }
 
+int32_t ObjectRecognition3d::readNumDetections(const std::vector<tensorflow::Tensor>& outputs) {
+	return static_cast<int32_t>(outputs[0].flat<float>().data()[0]);
+}
+
 cv::Rect2f ObjectRecognition3d::readDetectionRect(const std::vector<tensorflow::Tensor>& outputs, int32_t idx) {
 	float ymin = outputs[1].flat<float>().data()[idx * 4 + 0];
 	float xmin = outputs[1].flat<float>().data()[idx * 4 + 1];
@@ -227,31 +234,59 @@ cv::Point3f ObjectRecognition3d::calcPosition(const ObjectRecognition3d::DepthIm
 	return center;
 }
 
-void ObjectRecognition3d::syncQueues() {
-	{
-		// lock queue before iterating over it
-		std::lock_guard<std::mutex> rgbGuard(m_rgbMutex);
+cv::Rect2i ObjectRecognition3d::rect2ImageCoords(const Img<>& image, const cv::Rect2f& rect) {
+	return cv::Rect2i(static_cast<int>(rect.x * image.width()),
+					  static_cast<int>(rect.y * image.height()),
+					  static_cast<int>(rect.width * image.width()),
+					  static_cast<int>(rect.height * image.height()));
+}
 
-		// pop rgb images before next depth image
-		while(!m_rgbQueue.empty() && m_rgbQueue.front().frameNumber() < m_depthQueue.front().frameNumber()) {
-			std::cout << "Dropping RGB image. FrameNumber: " << m_rgbQueue.front().frameNumber() << std::endl;
-			m_rgbQueue.pop();
-		}
+cv::Rect2f ObjectRecognition3d::normalizeRect(const Img<>& image, const cv::Rect2f& rect) {
+	return cv::Rect2f(rect.x / image.width(),
+					  rect.y / image.height(),
+					  rect.width / image.width(),
+					  rect.height / image.height());
+}
+
+cv::Rect2d ObjectRecognition3d::clampRect(const Img<>& image, const cv::Rect2d& rect) {
+	double x0 = std::max(rect.x, 0.0);
+	double y0 = std::max(rect.y, 0.0);
+	auto br = rect.br();
+	double x1 = std::min(br.x, double(image.width()));
+	double y1 = std::min(br.y, double(image.height()));
+	return cv::Rect2d(x0, y0, x1-x0, y1-y0);
+}
+
+float ObjectRecognition3d::overlapPercentage(const cv::Rect2f& r0, const cv::Rect2f& r1) {
+	cv::Rect2f overlapRect = r0 & r1;
+	float overlapArea = overlapRect.area();
+	return overlapArea / (r0.area() + r1.area() - overlapArea);
+}
+
+ObjectRecognition3d::DetectionContainer ObjectRecognition3d::readDetections(
+		const std::vector<tensorflow::Tensor>& outputs,
+		const DepthImgType& depthImage) {
+	DetectionContainer detections;
+
+	int32_t numDetections = readNumDetections(outputs);
+	assert(numDetections >= 0);
+	detections.reserve(static_cast<size_t>(numDetections));
+
+	for(int32_t i = 0; i < numDetections; ++i) {
+		// read out a detection from output tensors
+		Detection d = readDetection(outputs, i);
+
+		// give it the frame number of the current image
+		d.frameNumber = depthImage.frameNumber();
+
+		// calculate the center position of the dectection
+		d.pos = calcPosition(depthImage, d.box);
+
+		// save detection to array and post it to channel
+		detections.push_back(d);
 	}
 
-	if(m_rgbQueue.empty())
-		return;
-
-	{
-		// lock queue before iterating over it
-		std::lock_guard<std::mutex> depthGuard(m_depthMutex);
-
-		// pop depth images before next rgb image
-		while(!m_depthQueue.empty() && m_depthQueue.front().frameNumber() < m_rgbQueue.front().frameNumber()) {
-			std::cout << "Dropping depth image. FrameNumber: " << m_depthQueue.front().frameNumber() << std::endl;
-			m_depthQueue.pop();
-		}
-	}
+	return detections;
 }
 
 std::vector<tensorflow::Tensor> ObjectRecognition3d::detect(const ObjectRecognition3d::RGBImgType& rgbImage) {
@@ -287,12 +322,38 @@ std::vector<tensorflow::Tensor> ObjectRecognition3d::detect(const ObjectRecognit
 	return outputs;
 }
 
+void ObjectRecognition3d::syncQueues() {
+	{
+		// lock queue before iterating over it
+		std::lock_guard<std::mutex> rgbGuard(m_rgbMutex);
+
+		// pop rgb images before next depth image
+		while(!m_rgbQueue.empty() && m_rgbQueue.front().frameNumber() < m_depthQueue.front().frameNumber()) {
+			std::cout << "Dropping RGB image. FrameNumber: " << m_rgbQueue.front().frameNumber() << std::endl;
+			m_rgbQueue.pop();
+		}
+	}
+
+	if(m_rgbQueue.empty())
+		return;
+
+	{
+		// lock queue before iterating over it
+		std::lock_guard<std::mutex> depthGuard(m_depthMutex);
+
+		// pop depth images before next rgb image
+		while(!m_depthQueue.empty() && m_depthQueue.front().frameNumber() < m_rgbQueue.front().frameNumber()) {
+			std::cout << "Dropping depth image. FrameNumber: " << m_depthQueue.front().frameNumber() << std::endl;
+			m_depthQueue.pop();
+		}
+	}
+}
+
 void ObjectRecognition3d::process() {
 	std::lock_guard<std::mutex> guard(m_processingMutex);
 
 	auto startTime = std::chrono::system_clock::now();
 	while(!m_rgbQueue.empty() && !m_depthQueue.empty()) {
-		auto tmpStartTime = std::chrono::system_clock::now();
 
 		// sync queues
 		syncQueues();
@@ -306,55 +367,167 @@ void ObjectRecognition3d::process() {
 		const auto& depthImage = m_depthQueue.front();
 		assert(rgbImage.frameNumber() == depthImage.frameNumber());
 
-		// detect objects on rgb image
-		auto outputs = detect(rgbImage);
+		// start a new detection thread if none is running
+		if(!m_bgDetecting && !m_bgThread) {
+			{
+				std::lock_guard<std::mutex> imageGuard(m_detectionImageMutex);
+				rgbImage.getMat().copyTo(m_detectionImage);
+				m_detectionImage.frameNumber() = rgbImage.frameNumber();
+			}
 
-		auto tmpEndTime = std::chrono::system_clock::now();
-		auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(tmpEndTime - tmpStartTime).count();
-		tmpStartTime = tmpEndTime;
-		std::cout << "Detecting took: " << duration << "ms" << std::endl;
+			m_bgDetecting = true;
+			std::cout << "Starting background detection" << std::endl;
+			m_bgThread = new std::thread([this]() {
+				std::vector<tf::Tensor> outputs;
 
-		if(outputs.empty())
-			return;
+				auto startTime = std::chrono::system_clock::now();
+				{
+					std::lock_guard<std::mutex> imageGuard(m_detectionImageMutex);
+					outputs = detect(m_detectionImage);
+				}
+				auto endTime = std::chrono::system_clock::now();
+				auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
+				std::cout << "Detecting took: " << duration << "ms" << std::endl;
 
-		// process detections
-		int32_t numDetections = static_cast<int32_t>(outputs[0].flat<float>().data()[0]);
+				std::vector<Detection> detections;
+				int32_t numDetections = readNumDetections(outputs);
+
+				assert(numDetections >= 0);
+				detections.reserve(static_cast<size_t>(numDetections));
+
+				for(int32_t i = 0; i < numDetections; ++i)
+					detections.push_back(readDetection(outputs, i));
+
+				m_bgDetections = detections;
+
+				m_bgDetecting = false;
+				std::cout << "Background detection done" << std::endl;
+			});
+		}
+
+		// track last detections
+		auto trackingStart = std::chrono::system_clock::now();
+		std::stack<size_t> lostIndices;
+		for(size_t i = 0; i < m_trackers.size(); ++i) {
+			cv::Rect2d box;
+			if(m_trackers[i]->update(rgbImage, box)) {
+				// update detection and clamp box
+				box = clampRect(rgbImage, box);
+				auto normalized = normalizeRect(rgbImage, box);
+				auto& d = m_detections[i];
+				d.frameNumber = rgbImage.frameNumber();
+				d.box = normalized;
+				d.pos = calcPosition(depthImage, normalized);
+			} else {
+				lostIndices.push(i);
+				std::cout << "Lost " << i << std::endl;
+			}
+		}
+
+		// move lost trackers to bg trackers and use them again
+		m_bgTrackers.reserve(m_bgTrackers.size() + lostIndices.size());
+		while(!lostIndices.empty()) {
+			size_t idx = lostIndices.top();
+			lostIndices.pop();
+
+			m_bgTrackers.push_back(m_trackers[idx]);
+
+			long offset = static_cast<long>(idx);
+			m_trackers.erase(m_trackers.begin() + offset);
+			m_detections.erase(m_detections.begin() + offset);
+		}
+
+		// join and clean up old thread if possible
+		if(!m_bgDetecting && m_bgThread) {
+			std::cout << "Processing background detection" << std::endl;
+			m_bgThread->join();
+			delete m_bgThread;
+			m_bgThread = nullptr;
+
+			// update new detections to current image
+			if(!m_bgDetections.empty()) {
+				// add more trackers if needed
+				m_bgTrackers.reserve(m_bgDetections.size());
+				for(size_t i = m_bgTrackers.size(); i < m_bgDetections.size(); ++i)
+					m_bgTrackers.push_back(cv::TrackerKCF::create());
+
+				std::stack<size_t> lostIndices;
+				for(size_t i = 0; i < m_bgDetections.size(); ++i) {
+					const auto& d = m_bgDetections[i];
+					cv::Rect2d box = rect2ImageCoords(m_detectionImage, d.box);
+					m_bgTrackers[i]->init(m_detectionImage, box);
+
+					// try to track to current image
+					if(m_bgTrackers[i]->update(rgbImage, box)) {
+						// update detection and clamp box
+						box = clampRect(rgbImage, box);
+						auto normalized = normalizeRect(rgbImage, box);
+						auto& d = m_bgDetections[i];
+						d.frameNumber = rgbImage.frameNumber();
+						d.box = normalized;
+						d.pos = calcPosition(depthImage, normalized);
+					} else {
+						lostIndices.push(i);
+					}
+				}
+
+				// delete lost trackers
+				while(!lostIndices.empty()) {
+					long offset = static_cast<long>(lostIndices.top());
+					lostIndices.pop();
+					m_bgDetections.erase(m_bgDetections.begin() + offset);
+					m_bgTrackers.erase(m_bgTrackers.begin() + offset);
+				}
+				//lostIndices empty now
+
+				// move new trackers to foreground trackers
+				m_trackers.reserve(m_trackers.size() + m_bgTrackers.size());
+				m_detections.reserve(m_detections.size() + m_bgDetections.size());
+				for(size_t i = 0; i < m_bgTrackers.size(); ++i) {
+					const auto& bgT = m_bgTrackers[i];
+					const auto& bgD = m_bgDetections[i];
+					float maxOverlap = 0;
+					for(auto it = m_detections.begin(); it != m_detections.end(); ++it) {
+						const auto& d = *it;
+						float overlap = overlapPercentage(bgD.box, d.box);
+						if(overlap > maxOverlap)
+							maxOverlap = overlap;
+					}
+					// insert if not overlapping too much with an active detection
+					if(maxOverlap < m_overlappingThreshold) {
+						m_trackers.push_back(bgT);
+						m_detections.push_back(bgD);
+						lostIndices.push(i);
+					}
+				}
+
+				// delete lost trackers since data was moved to foreground arrays
+				while(!lostIndices.empty()) {
+					long offset = static_cast<long>(lostIndices.top());
+					lostIndices.pop();
+					m_bgDetections.erase(m_bgDetections.begin() + offset);
+					m_bgTrackers.erase(m_bgTrackers.begin() + offset);
+				}
+			}
+		}
+
+		auto trackingEnd = std::chrono::system_clock::now();
+		auto trackingDuration = std::chrono::duration_cast<std::chrono::milliseconds>(trackingEnd - trackingStart).count();
+		std::cout << "Tracking detections took: " << trackingDuration << "ms" << std::endl;
+
+		// post detections
+		auto wChannelDetections = m_channelDetections.write();
+		wChannelDetections->value() = m_detections;
+
+		// draw detections to an debug output image
+		auto drawStart = std::chrono::system_clock::now();
 
 		RGBImgType outRGB;
 		rgbImage.getMat().copyTo(outRGB);
 		outRGB.frameNumber() = rgbImage.frameNumber();
 
-		DetectionContainer detections;
-		assert(numDetections >= 0);
-		detections.reserve(static_cast<size_t>(numDetections));
-
-		long channelDuration = 0;
-		long drawDuration = 0;
-		for(int32_t i = 0; i < numDetections; ++i) {
-			auto channelStart = std::chrono::system_clock::now();
-			// read out a detection from output tensors
-			Detection d = readDetection(outputs, i);
-
-			// give it the frame number of the current image
-			d.frameNumber = rgbImage.frameNumber();
-
-			// calculate the center position of the dectection
-			d.pos = calcPosition(depthImage, d.box);
-
-			// save detection to array and post it to channel
-			detections.push_back(d);
-//			auto wChannelDetection = m_channelDetections.write();
-//			wChannelDetection->value() = d;
-//			m_channelDetection.post(d);
-			auto channelEnd = std::chrono::system_clock::now();
-			channelDuration += std::chrono::duration_cast<std::chrono::milliseconds>(channelEnd - channelStart).count();
-
-			auto drawStart = std::chrono::system_clock::now();
-			// draw detection to an debug output image
-			cv::Rect resizedRect(static_cast<int>(d.box.x * outRGB.width()),
-								 static_cast<int>(d.box.y * outRGB.height()),
-								 static_cast<int>(d.box.width * outRGB.width()),
-								 static_cast<int>(d.box.height * outRGB.height()));
+		for(const auto& d : m_detections) {
+			cv::Rect resizedRect = rect2ImageCoords(outRGB, d.box);
 			cv::rectangle(outRGB, resizedRect, cv::Scalar(0, 0, 255), 4);
 
 			std::stringstream topText;
@@ -372,26 +545,14 @@ void ObjectRecognition3d::process() {
 			std::stringstream textRelPos;
 			textRelPos << d.pos;
 			cv::putText(outRGB.getMat(), textRelPos.str(), textPos, cv::FONT_HERSHEY_SIMPLEX, fontScale, cv::Scalar(0, 0, 255), thickness);
-			auto drawEnd = std::chrono::system_clock::now();
-			drawDuration += std::chrono::duration_cast<std::chrono::milliseconds>(drawEnd - drawStart).count();
 		}
 
-		// post detections
-		auto wChannelDetections = m_channelDetections.write();
-		wChannelDetections->value() = detections;
-//		m_channelDetections.post(detections);
-
-		tmpEndTime = std::chrono::system_clock::now();
-		duration = std::chrono::duration_cast<std::chrono::milliseconds>(tmpEndTime - tmpStartTime).count();
-		tmpStartTime = tmpEndTime;
-		std::cout << "Reading detection took: " << channelDuration << "ms" << std::endl;
+		auto drawEnd = std::chrono::system_clock::now();
+		auto drawDuration = std::chrono::duration_cast<std::chrono::milliseconds>(drawEnd - drawStart).count();
 		std::cout << "Draw detection took: " << drawDuration << "ms" << std::endl;
-		std::cout << "Processing Detections took: " << duration << "ms" << std::endl;
 
 		auto wRGBMarked = m_channelRGBMarked.write();
 		wRGBMarked->value() = outRGB;
-
-		m_lastDetections = detections;
 
 		{
 			std::lock_guard<std::mutex> rgbGuard(m_rgbMutex);
@@ -401,11 +562,6 @@ void ObjectRecognition3d::process() {
 			std::lock_guard<std::mutex> depthGuard(m_depthMutex);
 			m_depthQueue.pop();
 		}
-
-		tmpEndTime = std::chrono::system_clock::now();
-		duration = std::chrono::duration_cast<std::chrono::milliseconds>(tmpEndTime - tmpStartTime).count();
-		tmpStartTime = tmpEndTime;
-		std::cout << "Postprocessing took: " << duration << "ms" << std::endl;
 	}
 
 	auto endTime = std::chrono::system_clock::now();

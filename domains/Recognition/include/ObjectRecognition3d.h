@@ -52,9 +52,12 @@
 #include <fw/MicroUnit.h>
 
 #include <mutex>
+#include <thread>
 
 #include <recognitiondatatypes/Detection.h>
 #include <kinectdatatypes/Types.h>
+
+#include <opencv2/tracking.hpp>
 
 using namespace mira;
 
@@ -107,14 +110,22 @@ private:
 
 	cv::Point3f getXYZ(int r, int c, float depth);
 
-	cv::Rect2f	readDetectionRect(const std::vector<tf::Tensor>& outputs, int32_t idx);
-	float		readDetectionConfidence(const std::vector<tf::Tensor>& outputs, int32_t idx);
-	int			readDetectionType(const std::vector<tf::Tensor>& outputs, int32_t idx);
-	Detection	readDetection(const std::vector<tf::Tensor>& outputs, int32_t idx);
-	cv::Point3f	calcPosition(const DepthImgType& depthImg, const cv::Rect2f& rect);
+	int32_t				readNumDetections(const std::vector<tf::Tensor>& outputs);
+	cv::Rect2f			readDetectionRect(const std::vector<tf::Tensor>& outputs, int32_t idx);
+	float				readDetectionConfidence(const std::vector<tf::Tensor>& outputs, int32_t idx);
+	int					readDetectionType(const std::vector<tf::Tensor>& outputs, int32_t idx);
+	Detection			readDetection(const std::vector<tf::Tensor>& outputs, int32_t idx);
+	cv::Point3f			calcPosition(const DepthImgType& depthImg, const cv::Rect2f& rect);
+	cv::Rect2i			rect2ImageCoords(const Img<>& image, const cv::Rect2f& rect);
+	cv::Rect2f			normalizeRect(const Img<>& image, const cv::Rect2f& rect);
+	cv::Rect2d			clampRect(const Img<>& image, const cv::Rect2d& rect);
+	float				overlapPercentage(const cv::Rect2f& r0, const cv::Rect2f& r1);
+	DetectionContainer	readDetections(const std::vector<tf::Tensor>& outputs,
+									   const DepthImgType& depthImage);
+
+	std::vector<tf::Tensor> detect(const RGBImgType& rgbImage);
 
 	void syncQueues();
-	std::vector<tf::Tensor> detect(const RGBImgType& rgbImage);
 	void process();
 
 	// void onPoseChanged(ChannelRead<Pose2> pose);
@@ -122,6 +133,8 @@ private:
 	// void setPose(const Pose2& pose);
 
 private:
+	float	m_overlappingThreshold = 0.8f;
+
 	Channel<RGBImgType>				m_channelRGBMarked;
 	Channel<DetectionContainer>		m_channelDetections;
 
@@ -130,14 +143,23 @@ private:
 	RegistrationData	m_regData;
 	bool				m_hasRegData = false;
 
-	DetectionContainer		m_lastDetections;
-
 	std::queue<DepthImgType>	m_depthQueue;
 	std::queue<RGBImgType>		m_rgbQueue;
 
 	std::mutex	m_processingMutex;
 	std::mutex	m_depthMutex;
 	std::mutex	m_rgbMutex;
+
+	bool			m_bgDetecting = false;
+	std::thread*	m_bgThread = nullptr;
+	RGBImgType		m_detectionImage;
+	std::mutex		m_detectionImageMutex;
+
+	std::vector<Detection>				m_bgDetections;
+	std::vector<cv::Ptr<cv::Tracker>>	m_bgTrackers;
+
+	DetectionContainer					m_detections;
+	std::vector<cv::Ptr<cv::Tracker>>	m_trackers;
 };
 
 } // namespace recognition

@@ -30,6 +30,7 @@ MIRA_ADD_LIBRARY(ObjectRecognition3d
 	LINK_LIBS
 		MIRABase
 		MIRAFramework
+        opencv_tracking
 		libtensorflow_cc.so
         RecognitionDataTypes
         KinectDataTypes
