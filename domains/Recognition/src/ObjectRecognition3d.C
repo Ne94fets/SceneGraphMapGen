@@ -350,7 +350,10 @@ void ObjectRecognition3d::syncQueues() {
 }
 
 void ObjectRecognition3d::process() {
-	std::lock_guard<std::mutex> guard(m_processingMutex);
+	std::unique_lock<std::mutex> lock(m_processingMutex);
+	// if not getting lock return and do not block
+	if(!lock.owns_lock())
+		return;
 
 	auto startTime = std::chrono::system_clock::now();
 	while(!m_rgbQueue.empty() && !m_depthQueue.empty()) {
@@ -437,6 +440,12 @@ void ObjectRecognition3d::process() {
 			m_detections.erase(m_detections.begin() + offset);
 		}
 
+		auto trackingEnd = std::chrono::system_clock::now();
+		auto trackingDuration = std::chrono::duration_cast<std::chrono::milliseconds>(trackingEnd - trackingStart).count();
+		std::cout << "Tracking " << m_trackers.size() << " detections took: " << trackingDuration << "ms" << std::endl;
+
+		trackingStart = std::chrono::system_clock::now();
+
 		// join and clean up old thread if possible
 		if(!m_bgDetecting && m_bgThread) {
 			std::cout << "Processing background detection" << std::endl;
@@ -511,9 +520,9 @@ void ObjectRecognition3d::process() {
 			}
 		}
 
-		auto trackingEnd = std::chrono::system_clock::now();
-		auto trackingDuration = std::chrono::duration_cast<std::chrono::milliseconds>(trackingEnd - trackingStart).count();
-		std::cout << "Tracking detections took: " << trackingDuration << "ms" << std::endl;
+		trackingEnd = std::chrono::system_clock::now();
+		trackingDuration = std::chrono::duration_cast<std::chrono::milliseconds>(trackingEnd - trackingStart).count();
+		std::cout << "Tracking background to active took: " << trackingDuration << "ms" << std::endl;
 
 		// post detections
 		auto wChannelDetections = m_channelDetections.write();

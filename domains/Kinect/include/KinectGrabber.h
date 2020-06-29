@@ -82,7 +82,6 @@ public:
 	typedef kinectdatatypes::RegistrationData	RegistrationData;
 	typedef kinectdatatypes::RGBImgType			RGBImgType;
 	typedef kinectdatatypes::DepthImgType		DepthImgType;
-	typedef Img<uint8_t, 1>						DebugDepthImgType;
 
 public:
 
@@ -123,18 +122,16 @@ private:
 	RegistrationData	m_regData;
 	RGBImgType			m_imgRGB;
 	RGBImgType			m_imgRGBFull;
+	DepthImgType		m_imgIR;
 	DepthImgType		m_imgDepth;
-	DebugDepthImgType	m_imgDepthDebug;
 	DepthImgType		m_imgDepthFull;
-	DebugDepthImgType	m_imgDepthFullDebug;
 
 	Channel<RegistrationData>	m_channelRegistrationData;
-	Channel<RGBImgType>			m_channelRGB;
-	Channel<RGBImgType>			m_channelRGBFull;
-	Channel<DepthImgType>		m_channelDepth;
-	Channel<DebugDepthImgType>	m_channelDepthDebug;
-	Channel<DepthImgType>		m_channelDepthFull;
-	Channel<DebugDepthImgType>	m_channelDepthFullDebug;
+	Channel<RGBImgType>			m_channelRGB;		// uchar range: [0,255]
+	Channel<RGBImgType>			m_channelRGBFull;	// uchar range: [0,255]
+	Channel<DepthImgType>		m_channelIR;		// float range: [0, 65535]
+	Channel<DepthImgType>		m_channelDepth;		// float unit: [mm] Non-positive, NaN, and infinity are invalid or missing data.
+	Channel<DepthImgType>		m_channelDepthFull;	// float unit: [mm] Non-positive, NaN, and infinity are invalid or missing data.
 };
 
 } // namespace kinect
