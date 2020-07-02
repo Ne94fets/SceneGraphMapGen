@@ -458,7 +458,7 @@ void ObjectRecognition3d::process() {
 				// add more trackers if needed
 				m_bgTrackers.reserve(m_bgDetections.size());
 				for(size_t i = m_bgTrackers.size(); i < m_bgDetections.size(); ++i)
-					m_bgTrackers.push_back(cv::TrackerKCF::create());
+					m_bgTrackers.push_back(cv::TrackerKCF::createTracker());
 
 				std::stack<size_t> lostIndices;
 				for(size_t i = 0; i < m_bgDetections.size(); ++i) {

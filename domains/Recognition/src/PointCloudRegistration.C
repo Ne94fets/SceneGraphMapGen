@@ -47,6 +47,8 @@
 //#include <transform/Pose.h> // TODO: enable to use Pose2!
 #include <fw/MicroUnit.h>
 
+#include <chrono>
+
 #include <pcl/point_cloud.h>
 
 #include <pcl/memory.h>
