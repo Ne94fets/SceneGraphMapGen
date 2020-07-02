@@ -30,10 +30,10 @@ MIRA_ADD_LIBRARY(ObjectRecognition3d
 	LINK_LIBS
 		MIRABase
 		MIRAFramework
-        opencv_tracking
-		libtensorflow_cc.so
-        RecognitionDataTypes
-        KinectDataTypes
+		opencv_tracking
+		tensorflow_cc
+		RecognitionDataTypes
+		KinectDataTypes
 )
 
 ###############################################################################
@@ -50,6 +50,8 @@ MIRA_ADD_LIBRARY(PointCloudRegistration
         KinectDataTypes
         pcl_common
         pcl_kdtree
-        pcl_features
-        pcl_registration
+		pcl_features
+		pcl_filters
+		pcl_registration
+		pcl_sample_consensus
 )
