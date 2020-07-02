@@ -58,6 +58,7 @@
 #include <kinectdatatypes/Types.h>
 
 #include <opencv2/tracking.hpp>
+#include <opencv2/tracking/tracker.hpp>
 
 using namespace mira;
 
