@@ -27,6 +27,10 @@ if(NOT EXISTS "${DOWNLOAD_DIR}")
 	endif()
 endif()
 
+### make sure opencv is installed
+find_package(OpenCV REQUIRED)
+include_directories(OpenCV_INCLUDE_DIR)
+
 ### create tensorflow model symlink
 set(MODEL_SYMLINK_TARGET "${EXTERNAL_DIR}/models/faster_rcnn_inception_v2_coco_2018_01_28/frozen_inference_graph.pb")
 set(MODEL_SYMLINK_DESTINATION "${CMAKE_SOURCE_DIR}/model.pb")
@@ -204,9 +208,9 @@ if(NOT EXISTS "${NEO4J_DIR}")
     message(STATUS ${EXEC_OUT})
     if(${RESULT_VARIABLE})
         message(FATAL_ERROR ${EXEC_ERR})
-    endif()
+	endif()
     message(STATUS "Moving to external dir")
-    file(RENAME "${DOWNLOAD_DIR}/${NEO4J_NAME}" "${NEO4J_DIR}")
+	file(RENAME "${DOWNLOAD_DIR}/${NEO4J_NAME}" "${NEO4J_DIR}")
 endif()
 
 ### download libneo4j-client
@@ -230,7 +234,7 @@ if(NOT EXISTS "${LIBNEO4J_DIR}")
     message(STATUS ${EXEC_OUT})
     if(${RESULT_VARIABLE})
         message(FATAL_ERROR ${EXEC_ERR})
-    endif()
+	endif()
     message(STATUS "Moving to external dir")
     file(RENAME "${DOWNLOAD_DIR}/${LIBNEO4J_NAME}" "${LIBNEO4J_DIR}")
     message(STATUS "Autogen ${LIBNEO4J_NAME}")
@@ -291,9 +295,9 @@ if(NOT EXISTS "${PCL_DIR}")
     message(STATUS ${EXEC_OUT})
     if(${RESULT_VARIABLE})
         message(FATAL_ERROR ${EXEC_ERR})
-    endif()
+	endif()
     message(STATUS "Moving to external dir")
-    file(RENAME "${DOWNLOAD_DIR}/${PCL_NAME}" "${PCL_DIR}")
+	file(RENAME "${DOWNLOAD_DIR}/${PCL_NAME}" "${PCL_DIR}")
     file(MAKE_DIRECTORY "${PCL_DIR}/build")
     message(STATUS "Configure ${PCL_NAME}")
     execute_process(
@@ -356,7 +360,9 @@ if(NOT EXISTS "${LIBFREENECT2_DIR}")
     execute_process(
         COMMAND cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=${LIBFREENECT2_DIR} ..
         WORKING_DIRECTORY ${LIBFREENECT2_DIR}/build
-        ERROR_VARIABLE EXEC_ERR)
+		ERROR_VARIABLE EXEC_ERR
+		OUTPUT_VARIABLE EXEC_OUT)
+	message(STATUS ${EXEC_OUT})
     if(${RESULT_VARIABLE})
         message(FATAL_ERROR ${EXEC_ERR})
     endif()
