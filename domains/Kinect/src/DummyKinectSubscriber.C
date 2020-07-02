@@ -48,6 +48,8 @@
 #include <fw/MicroUnit.h>
 #include <image/Img.h>
 
+#include <kinectdatatypes/Types.h>
+
 using namespace mira;
 
 namespace kinect { 
@@ -62,9 +64,9 @@ class DummyKinectSubscriber : public MicroUnit
 MIRA_OBJECT(DummyKinectSubscriber)
 
 public:
-
-	typedef Img<uint8_t, 3> RGBImgType;
-	typedef Img<uint8_t, 1> DepthImgType;
+	typedef kinectdatatypes::RegistrationData	RegistrationData;
+	typedef kinectdatatypes::RGBImgType			RGBImgType;
+	typedef kinectdatatypes::DepthImgType		DepthImgType;
 
 	DummyKinectSubscriber();
 
@@ -109,8 +111,8 @@ DummyKinectSubscriber::DummyKinectSubscriber()
 
 void DummyKinectSubscriber::initialize()
 {
-	subscribe<RGBImgType>("RGBImage", &DummyKinectSubscriber::onNewRGBImage);
-	subscribe<DepthImgType>("DepthImage", &DummyKinectSubscriber::onNewDepthImage);
+	subscribe<RGBImgType>("RGBImageFull", &DummyKinectSubscriber::onNewRGBImage);
+	subscribe<DepthImgType>("DepthImageFull", &DummyKinectSubscriber::onNewDepthImage);
 	// TODO: subscribe and publish all required channels
 	//subscribe<Pose2>("Pose", &DummyKinectSubscriber::onPoseChanged);
 	//mChannel = publish<Img<>>("Image");
