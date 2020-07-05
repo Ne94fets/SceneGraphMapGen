@@ -80,8 +80,9 @@ class KinectGrabber : public Unit
 MIRA_OBJECT(KinectGrabber)
 public:
 	typedef kinectdatatypes::RegistrationData	RegistrationData;
-	typedef kinectdatatypes::RGBImgType			RGBImgType;
-	typedef kinectdatatypes::DepthImgType		DepthImgType;
+
+	typedef Img<uint8_t, 3>	RGBImgType;
+	typedef Img<float, 1>	DepthImgType;
 
 public:
 
@@ -109,7 +110,8 @@ private:
 	// void onPoseChanged(ChannelRead<Pose2> pose);
 
 private:
-	size_t									m_frameNumber = 0;
+	uint32_t	m_frameNumber = 0;
+
 	libfreenect2::Freenect2					m_freenect2;
 	libfreenect2::Freenect2Device*			m_dev = nullptr;
 	libfreenect2::Registration*				m_registration = nullptr;
