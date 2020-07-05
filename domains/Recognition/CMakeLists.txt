@@ -24,7 +24,7 @@ MIRA_ADD_LIBRARY(ObjectRecognition3d
 	PACKAGE Recognition
 	SOURCE
 		etc/ObjectRecognition3d.xml
-        include/ObjectRecognition3d.h
+		include/ObjectRecognition3d.h
 		src/ObjectRecognition3d.C
 
 	LINK_LIBS

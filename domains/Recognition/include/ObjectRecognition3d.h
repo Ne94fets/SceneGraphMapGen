@@ -51,8 +51,10 @@
 //#include <transform/Pose.h> // TODO: enable to use Pose2!
 #include <fw/MicroUnit.h>
 
+#include <optional>
 #include <mutex>
 #include <thread>
+#include <utility>
 
 #include <recognitiondatatypes/Detection.h>
 #include <kinectdatatypes/Types.h>
@@ -88,6 +90,8 @@ public:
 	typedef recognitiondatatypes::Detection				Detection;
 	typedef recognitiondatatypes::DetectionContainer	DetectionContainer;
 
+	typedef std::pair<ChannelRead<RGBImgType>, ChannelRead<DepthImgType>>	ChannelReadPair;
+
 public:
 	ObjectRecognition3d();
 	virtual ~ObjectRecognition3d();
@@ -109,6 +113,15 @@ private:
 	void onNewRGBImage(ChannelRead<RGBImgType> image);
 	void onNewDepthImage(ChannelRead<DepthImgType> image);
 
+	void process();
+
+	std::optional<ChannelReadPair> getSyncedPair();
+
+	void processPair(const ChannelReadPair& pair);
+	void startDetection(const RGBImgType& rgbImage);
+	void trackLastDetections(const RGBImgType& rgbImage, const DepthImgType& depthImage);
+	void trackNewDetections(const RGBImgType& rgbImage, const DepthImgType& depthImage);
+
 	cv::Point3f getXYZ(int r, int c, float depth);
 
 	int32_t				readNumDetections(const std::vector<tf::Tensor>& outputs);
@@ -126,30 +139,30 @@ private:
 
 	std::vector<tf::Tensor> detect(const RGBImgType& rgbImage);
 
-	void syncQueues();
-	void process();
-
 	// void onPoseChanged(ChannelRead<Pose2> pose);
 
 	// void setPose(const Pose2& pose);
 
 private:
+	bool	m_shutdown = false;
 	float	m_overlappingThreshold = 0.8f;
 
 	Channel<RGBImgType>				m_channelRGBMarked;
 	Channel<DetectionContainer>		m_channelDetections;
+
+	std::queue<ChannelRead<DepthImgType>>	m_depthQueue;
+	std::queue<ChannelRead<RGBImgType>>		m_rgbQueue;
 
 	tf::Session*	m_session = nullptr;
 
 	RegistrationData	m_regData;
 	bool				m_hasRegData = false;
 
-	std::queue<DepthImgType>	m_depthQueue;
-	std::queue<RGBImgType>		m_rgbQueue;
-
 	std::mutex	m_processingMutex;
 	std::mutex	m_depthMutex;
 	std::mutex	m_rgbMutex;
+
+	std::thread*	m_trackThread = nullptr;
 
 	bool			m_bgDetecting = false;
 	std::thread*	m_bgThread = nullptr;
