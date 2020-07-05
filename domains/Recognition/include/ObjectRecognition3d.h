@@ -114,6 +114,7 @@ private:
 	void onNewDepthImage(ChannelRead<DepthImgType> image);
 
 	void process();
+	void backgroundProcess();
 
 	std::optional<ChannelReadPair> getSyncedPair();
 
@@ -122,7 +123,9 @@ private:
 	void trackLastDetections(const RGBImgType& rgbImage, const DepthImgType& depthImage);
 	void trackNewDetections(const RGBImgType& rgbImage, const DepthImgType& depthImage);
 
-	cv::Point3f getXYZ(int r, int c, float depth);
+	cv::Point3f getXYZ(const int r, const int c, const float depth,
+					   const float cx, const float cy,
+					   const float fracfx, const float fracfy);
 
 	int32_t				readNumDetections(const std::vector<tf::Tensor>& outputs);
 	cv::Rect2f			readDetectionRect(const std::vector<tf::Tensor>& outputs, int32_t idx);
@@ -144,8 +147,14 @@ private:
 	// void setPose(const Pose2& pose);
 
 private:
+	enum class BackgroundStatus {
+		WORKING,
+		DONE,
+		WAITING
+	};
+
 	bool	m_shutdown = false;
-	float	m_overlappingThreshold = 0.8f;
+	float	m_overlappingThreshold = 0.6f;
 
 	Channel<RGBImgType>				m_channelRGBMarked;
 	Channel<DetectionContainer>		m_channelDetections;
@@ -163,11 +172,11 @@ private:
 	std::mutex	m_rgbMutex;
 
 	std::thread*	m_trackThread = nullptr;
-
-	bool			m_bgDetecting = false;
 	std::thread*	m_bgThread = nullptr;
-	RGBImgType		m_detectionImage;
-	std::mutex		m_detectionImageMutex;
+
+	BackgroundStatus	m_bgStatus = BackgroundStatus::WAITING;
+	RGBImgType			m_detectionImage;
+	std::mutex			m_detectionImageMutex;
 
 	std::vector<Detection>				m_bgDetections;
 	std::vector<cv::Ptr<cv::Tracker>>	m_bgTrackers;
