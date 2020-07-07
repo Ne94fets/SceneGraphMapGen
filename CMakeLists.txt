@@ -1,13 +1,10 @@
 ##############################################################################
 
-cmake_minimum_required(VERSION 2.8.4)
+cmake_minimum_required(VERSION 3.10)
 
 ##############################################################################
 
 project(GraphMap)
-
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 ##############################################################################
 
@@ -27,8 +24,91 @@ if(NOT EXISTS "${DOWNLOAD_DIR}")
 	endif()
 endif()
 
-### make sure opencv is installed
-find_package(OpenCV REQUIRED)
+### make sure opencv 4.3.0 is installed
+set(OPENCV_DIR "${EXTERNAL_DIR}/opencv")
+set(OPENCV_CONTRIB_DIR "${EXTERNAL_DIR}/opencv_contrib")
+if(NOT EXISTS "${OPENCV_DIR}")
+	### download opencv contrib
+	set(OPENCV_CONTRIB_NAME "opencv_contrib-4.3.0")
+	set(OPENCV_CONTRIB_DL "${DOWNLOAD_DIR}/${OPENCV_CONTRIB_NAME}.tar.gz")
+	if(NOT EXISTS ${OPENCV_CONTRIB_DL})
+		message(STATUS "Downloading ${OPENCV_NAME}")
+		file(DOWNLOAD
+			"https://github.com/opencv/opencv_contrib/archive/4.3.0.tar.gz"
+			"${OPENCV_CONTRIB_DL}"
+			SHOW_PROGRESS)
+	endif()
+	message(STATUS "Extracting ${OPENCV_CONTRIB_NAME}")
+	execute_process(COMMAND
+		${CMAKE_COMMAND} -E tar xf "${OPENCV_CONTRIB_DL}"
+		WORKING_DIRECTORY "${DOWNLOAD_DIR}"
+		ERROR_VARIABLE EXEC_ERR
+		OUTPUT_VARIABLE EXEC_OUT)
+	message(STATUS ${EXEC_OUT})
+	if(${RESULT_VARIABLE})
+		message(FATAL_ERROR ${EXEC_ERR})
+	endif()
+	message(STATUS "Moving opencv_contrib to external dir")
+	file(RENAME "${DOWNLOAD_DIR}/${OPENCV_CONTRIB_NAME}" "${OPENCV_CONTRIB_DIR}")
+
+	### download main opencv
+	set(OPENCV_NAME "opencv-4.3.0")
+	set(OPENCV_DL "${DOWNLOAD_DIR}/${OPENCV_NAME}.tar.gz")
+	if(NOT EXISTS ${OPENCV_DL})
+		message(STATUS "Downloading ${OPENCV_NAME}")
+		file(DOWNLOAD
+			"https://github.com/opencv/opencv/archive/4.3.0.tar.gz"
+			"${OPENCV_DL}"
+			SHOW_PROGRESS)
+	endif()
+	message(STATUS "Extracting ${OPENCV_NAME}")
+	execute_process(COMMAND
+		${CMAKE_COMMAND} -E tar xf "${OPENCV_DL}"
+		WORKING_DIRECTORY "${DOWNLOAD_DIR}"
+		ERROR_VARIABLE EXEC_ERR
+		OUTPUT_VARIABLE EXEC_OUT)
+	message(STATUS ${EXEC_OUT})
+	if(${RESULT_VARIABLE})
+		message(FATAL_ERROR ${EXEC_ERR})
+	endif()
+
+	### move opencv to external dir
+	message(STATUS "Moving opencv to external dir")
+	file(RENAME "${DOWNLOAD_DIR}/${OPENCV_NAME}" "${OPENCV_DIR}")
+	file(MAKE_DIRECTORY "${OPENCV_DIR}/build")
+	message(STATUS "Configure ${OPENCV_NAME}")
+	execute_process(
+		COMMAND cmake
+			-DOPENCV_EXTRA_MODULES_PATH=${OPENCV_CONTRIB_DIR}/modules
+			-DBUILD_opencv_legacy=OFF
+			-DCMAKE_BUILD_TYPE=Release
+			-DCMAKE_INSTALL_PREFIX=${OPENCV_DIR} ..
+		WORKING_DIRECTORY ${OPENCV_DIR}/build
+		ERROR_VARIABLE EXEC_ERR)
+	if(${RESULT_VARIABLE})
+		message(FATAL_ERROR ${EXEC_ERR})
+	endif()
+	message(STATUS "Building ${OPENCV_NAME}")
+	execute_process(
+		COMMAND make -j ${NumCores}
+		WORKING_DIRECTORY ${OPENCV_DIR}/build
+		ERROR_VARIABLE EXEC_ERR)
+	if(${RESULT_VARIABLE})
+		message(FATAL_ERROR ${EXEC_ERR})
+	endif()
+	message(STATUS "Installing locally ${OPENCV_NAME}")
+	execute_process(
+		COMMAND make install
+		WORKING_DIRECTORY ${OPENCV_DIR}/build
+		ERROR_VARIABLE EXEC_ERR)
+	if(${RESULT_VARIABLE})
+		message(FATAL_ERROR ${EXEC_ERR})
+	endif()
+endif()
+
+find_package(OpenCV 4.3.0 REQUIRED
+	COMPONENTS core imgproc video
+	HINTS ${OPENCV_DIR})
 include_directories(OpenCV_INCLUDE_DIR)
 
 ### create tensorflow model symlink

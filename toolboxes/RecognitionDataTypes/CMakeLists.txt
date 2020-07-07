@@ -14,14 +14,14 @@ MIRA_ADD_DOCUMENTATION(RecognitionDataTypes
 ###############################################################################
 
 MIRA_ADD_LIBRARY(RecognitionDataTypes
-    SHARED
-    PACKAGE RecognitionDataTypes
-    SOURCE
-        include/recognitiondatatypes/RecognitionDataTypesExports.h
-        include/recognitiondatatypes/Detection.h
-        src/Detection.C
+	SHARED
+	PACKAGE RecognitionDataTypes
+	SOURCE
+		include/recognitiondatatypes/RecognitionDataTypesExports.h
+		include/recognitiondatatypes/Detection.h
+		src/Detection.C
 
-    LINK_LIBS
-        MIRABase
-        MIRAFramework
+	LINK_LIBS
+		MIRABase
+		MIRAFramework
 )

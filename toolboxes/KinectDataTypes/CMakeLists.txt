@@ -15,16 +15,16 @@ MIRA_ADD_DOCUMENTATION(KinectDataTypes
 ###############################################################################
 
 MIRA_ADD_LIBRARY(KinectDataTypes
-    SHARED
-    PACKAGE KinectDataTypes
-    SOURCE
-        include/kinectdatatypes/KinectDataTypesExports.h
-        include/kinectdatatypes/Types.h
-        src/Types.C
+	SHARED
+	PACKAGE KinectDataTypes
+	SOURCE
+		include/kinectdatatypes/KinectDataTypesExports.h
+		include/kinectdatatypes/Types.h
+		src/Types.C
 
-    LINK_LIBS
-        MIRABase
-        MIRAFramework
-        libfreenect2.so
-        GUIVisualization
+	LINK_LIBS
+		MIRABase
+		MIRAFramework
+		libfreenect2.so
+		GUIVisualization
 )

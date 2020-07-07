@@ -91,6 +91,7 @@ public:
 	typedef recognitiondatatypes::DetectionContainer	DetectionContainer;
 
 	typedef std::pair<ChannelRead<RGBImgType>, ChannelRead<DepthImgType>>	ChannelReadPair;
+	typedef std::tuple<int, int, float>										ImgDepthPoint;
 
 public:
 	ObjectRecognition3d();
@@ -177,6 +178,8 @@ private:
 	BackgroundStatus	m_bgStatus = BackgroundStatus::WAITING;
 	RGBImgType			m_detectionImage;
 	std::mutex			m_detectionImageMutex;
+
+	std::vector<ImgDepthPoint>			m_calcPositionBuffer;
 
 	std::vector<Detection>				m_bgDetections;
 	std::vector<cv::Ptr<cv::Tracker>>	m_bgTrackers;

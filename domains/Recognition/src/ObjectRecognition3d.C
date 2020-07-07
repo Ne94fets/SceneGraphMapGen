@@ -56,8 +56,8 @@
 #include "tensorflow/core/platform/env.h"
 
 #include <opencv2/opencv.hpp>
-#include <opencv2/tracking.hpp>
 #include <opencv2/imgproc.hpp>
+#include <opencv2/tracking.hpp>
 
 #include <utils/Time.h>
 
@@ -84,6 +84,9 @@ namespace recognition {
 
 ObjectRecognition3d::ObjectRecognition3d() {
 	// TODO: further initialization of members, etc.{
+
+	// reserve memory for 10000 points used in calcPosition
+	m_calcPositionBuffer.reserve(100*100);
 }
 
 ObjectRecognition3d::~ObjectRecognition3d() {
@@ -215,14 +218,15 @@ void ObjectRecognition3d::backgroundProcess() {
 		}
 		auto endTime = std::chrono::system_clock::now();
 		auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
-		if(duration > 1000/30)
-			std::cout << "Detecting took: " << duration << "ms" << std::endl;
 
 		std::vector<Detection> detections;
 		int32_t numDetections = readNumDetections(outputs);
 
+		if(duration > 1000/30) {
+			std::cout << "Detecting " << numDetections << " took: " << duration << "ms" << std::endl;
+		}
+
 		assert(numDetections >= 0);
-		std::cout << "Detecting " << numDetections << " took: " << duration << "ms" << std::endl;
 		detections.reserve(static_cast<size_t>(numDetections));
 
 		for(int32_t i = 0; i < numDetections; ++i)
@@ -301,7 +305,7 @@ void ObjectRecognition3d::processPair(const ChannelReadPair& pair) {
 
 	for(const auto& d : m_detections) {
 		cv::Rect resizedRect = rect2ImageCoords(outRGB, d.box);
-		cv::rectangle(outRGB, resizedRect, cv::Scalar(0, 0, 255), 4);
+		cv::rectangle(static_cast<cv::Mat>(outRGB), resizedRect, cv::Scalar(0, 0, 255), 4);
 
 		std::stringstream topText;
 		try {
@@ -315,7 +319,7 @@ void ObjectRecognition3d::processPair(const ChannelReadPair& pair) {
 		auto textSize = cv::getTextSize(topText.str(), cv::FONT_HERSHEY_SIMPLEX, fontScale, thickness, &baseline);
 		auto textPos = cv::Point2i(static_cast<int>(d.box.x * outRGB.width()),
 								   static_cast<int>(d.box.y * outRGB.height()));
-		cv::rectangle(outRGB, cv::Rect(textPos + cv::Point2i(0, -textSize.height), textSize), cv::Scalar(0, 0, 255), -1);
+		cv::rectangle(static_cast<cv::Mat>(outRGB), cv::Rect(textPos + cv::Point2i(0, -textSize.height), textSize), cv::Scalar(0, 0, 255), -1);
 		cv::putText(outRGB.getMat(), topText.str(), textPos,
 					cv::FONT_HERSHEY_SIMPLEX, fontScale, cv::Scalar(0, 0, 0), thickness);
 		textPos.y += textSize.height + 4;
@@ -357,7 +361,8 @@ void ObjectRecognition3d::trackLastDetections(const RGBImgType& rgbImage, const 
 		cv::Rect2d box;
 
 		auto trackingStart = std::chrono::system_clock::now();
-		if(m_trackers[i]->update(rgbImage, box)) {
+		bool trackSucess = m_trackers[i]->update(rgbImage, box);
+		if(trackSucess && box.height > 0 && box.width > 0) {
 			auto trackingEnd = std::chrono::system_clock::now();
 			auto trackingDuration = std::chrono::duration_cast<std::chrono::milliseconds>(trackingEnd - trackingStart).count();
 			if(trackingDuration > 1000/30)
@@ -531,33 +536,37 @@ ObjectRecognition3d::Detection ObjectRecognition3d::readDetection(const std::vec
 
 cv::Point3f ObjectRecognition3d::calcPosition(const ObjectRecognition3d::DepthImgType& depthImg,
 											  const cv::Rect2f& rect) {
-	typedef std::tuple<int, int, float> ImgDepthPoint;
 
 	assert(rect.width >= 0 &&
 		   rect.height >= 0);
 
 	// get array of depths for region of intererst.
-	std::vector<ImgDepthPoint> roiPoints;
 	int ymin = static_cast<int>(rect.y * depthImg.height());
 	int ymax = static_cast<int>((rect.y + rect.height) * depthImg.height());
 	int xmin = static_cast<int>(rect.x * depthImg.width());
 	int xmax = static_cast<int>((rect.x + rect.width) * depthImg.width());
 
 	// do not use full resolution since depth image is upscaled
-	roiPoints.reserve(static_cast<size_t>((ymax - ymin) * (xmax - xmin) / 4));
-	for(int y = ymin; y < ymax; y+=2) {
-		for(int x = xmin; x < xmax; x+=2) {
+	// sample with a 100x100 grid
+	// ensure minimal step width of 1
+	int yStep = std::max((ymax - ymin) / 100, 1);
+	int xStep = std::max((xmax - xmin) / 100, 1);
+
+	// do not always allocat and reserve memory
+	m_calcPositionBuffer.clear();
+	for(int y = ymin; y < ymax; y+=yStep) {
+		for(int x = xmin; x < xmax; x+=xStep) {
 			float depth = depthImg(x, y);
 			if(std::isfinite(depth) && depth > 0)
-				roiPoints.push_back({x, y, depth});
+				m_calcPositionBuffer.push_back({x, y, depth});
 		}
 	}
 
 	// get mean of depths between 0.25 and 0.75 quantile
-	const auto q1 = roiPoints.size() / 4;
-	const auto q2 = roiPoints.size() / 2;
+	const auto q1 = m_calcPositionBuffer.size() / 4;
+	const auto q2 = m_calcPositionBuffer.size() / 2;
 	const auto q3 = q1 + q2;
-	std::sort(roiPoints.begin(), roiPoints.end(), [](const ImgDepthPoint& lhs, const ImgDepthPoint& rhs) {
+	std::sort(m_calcPositionBuffer.begin(), m_calcPositionBuffer.end(), [](const ImgDepthPoint& lhs, const ImgDepthPoint& rhs) {
 		return std::get<2>(lhs) < std::get<2>(rhs);
 	});
 
@@ -570,7 +579,7 @@ cv::Point3f ObjectRecognition3d::calcPosition(const ObjectRecognition3d::DepthIm
 	for(size_t i = q1; i < q3; ++i) {
 		int r, c;
 		float depth;
-		std::tie(r, c, depth) = roiPoints[i];
+		std::tie(r, c, depth) = m_calcPositionBuffer[i];
 		const auto pInWorldCoords = getXYZ(r, c, depth,
 										   cx, cy, fracfx, fracfy);
 		assert(std::isfinite(pInWorldCoords.x) &&

@@ -80,6 +80,8 @@ Thumbs.db
 /external/libfreenect2
 /external/libneo4j-client
 /external/neo4j
+/external/opencv
+/external/opencv_contrib
 /external/pcl
 /external/protobuf
 /external/tensorflow

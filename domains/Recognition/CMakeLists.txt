@@ -36,6 +36,10 @@ MIRA_ADD_LIBRARY(ObjectRecognition3d
 		KinectDataTypes
 )
 
+set_target_properties(ObjectRecognition3d PROPERTIES
+	CXX_STANDARD 17
+	CXX_EXTENSIONS OFF)
+
 ###############################################################################
 
 MIRA_ADD_LIBRARY(PointCloudRegistration

@@ -130,7 +130,7 @@ void KinectGrabber::process(const Timer& timer) {
 	// post full rgb image
 	cv::Mat rgbFull(rgb->height, rgb->width, CV_8UC4, rgb->data);
 	cv::Mat tmpRGBFull(rgbFull.rows, rgbFull.cols, CV_8UC3);
-	cv::cvtColor(rgbFull, tmpRGBFull, CV_BGRA2BGR);
+	cv::cvtColor(rgbFull, tmpRGBFull, cv::COLOR_BGRA2BGR);
 	cv::flip(tmpRGBFull, m_imgRGBFull, 1);
 
 	ChannelWrite<RGBImgType> wRGBFull = m_channelRGBFull.write();
@@ -176,7 +176,7 @@ void KinectGrabber::process(const Timer& timer) {
 	cv::Mat bgrxReg(m_registeredRGB.height, m_registeredRGB.width,
 					CV_8UC4, m_registeredRGB.data);
 	cv::Mat tmpRGB(bgrxReg.rows, bgrxReg.cols, CV_8UC3);
-	cv::cvtColor(bgrxReg, tmpRGB, CV_BGRA2BGR);
+	cv::cvtColor(bgrxReg, tmpRGB, cv::COLOR_BGRA2BGR);
 	cv::flip(tmpRGB, m_imgRGB, 1);
 
 	ChannelWrite<RGBImgType> wRGB = m_channelRGB.write();
