@@ -151,11 +151,11 @@ void ObjectRecognition3d::onRegistrationData(ChannelRead<ObjectRecognition3d::Re
 
 void ObjectRecognition3d::onNewRGBImage(
 		ChannelRead<ObjectRecognition3d::RGBImgType> image) {
-	static size_t prevNumber = 0;
-	if(image->frameNumber() != prevNumber+1) {
-		std::cout << "Missing color image " << prevNumber+1 << " til " << image->frameNumber() << std::endl;
+	static uint32_t prevNumber = 0;
+	if(image->sequenceID != prevNumber+1) {
+		std::cout << "Missing color image " << prevNumber+1 << " til " << image->sequenceID << std::endl;
 	}
-	prevNumber = image->frameNumber();
+	prevNumber = image->sequenceID;
 	{
 		std::lock_guard<std::mutex> rgbMutex(m_rgbMutex);
 		m_rgbQueue.push(image);
@@ -165,10 +165,10 @@ void ObjectRecognition3d::onNewRGBImage(
 void ObjectRecognition3d::onNewDepthImage(
 		ChannelRead<ObjectRecognition3d::DepthImgType> image) {
 	static size_t prevNumber = 0;
-	if(image->frameNumber() != prevNumber+1) {
-		std::cout << "Missing depth image " << prevNumber+1 << " til " << image->frameNumber() << std::endl;
+	if(image->sequenceID != prevNumber+1) {
+		std::cout << "Missing depth image " << prevNumber+1 << " til " << image->sequenceID << std::endl;
 	}
-	prevNumber = image->frameNumber();
+	prevNumber = image->sequenceID;
 
 	{
 		std::lock_guard<std::mutex> depthMutex(m_depthMutex);
@@ -253,25 +253,25 @@ std::optional<ObjectRecognition3d::ChannelReadPair> ObjectRecognition3d::getSync
 
 		while(m_rgbQueue.size() > 1 && m_depthQueue.size() > 1) {
 			// pop rgb images before next depth image
-			while(!m_rgbQueue.empty() && m_rgbQueue.front()->frameNumber() < m_depthQueue.front()->frameNumber()) {
-				std::cout << "No matching depth image. Dropping RGB image. FrameNumber: " << m_rgbQueue.front()->frameNumber() << std::endl;
+			while(!m_rgbQueue.empty() && m_rgbQueue.front()->sequenceID < m_depthQueue.front()->sequenceID) {
+				std::cout << "No matching depth image. Dropping RGB image. FrameNumber: " << m_rgbQueue.front()->sequenceID << std::endl;
 				m_rgbQueue.pop();
 			}
 			// pop depth images before next rgb image
-			while(!m_depthQueue.empty() && m_depthQueue.front()->frameNumber() < m_rgbQueue.front()->frameNumber()) {
-				std::cout << "No matching rgb image. Dropping depth image. FrameNumber: " << m_depthQueue.front()->frameNumber() << std::endl;
+			while(!m_depthQueue.empty() && m_depthQueue.front()->sequenceID < m_rgbQueue.front()->sequenceID) {
+				std::cout << "No matching rgb image. Dropping depth image. FrameNumber: " << m_depthQueue.front()->sequenceID << std::endl;
 				m_depthQueue.pop();
 			}
 
 			pair = std::make_pair(m_rgbQueue.front(), m_depthQueue.front());
 
 			// rgb and depth image should be synchronized and have same frame number now
-			assert(pair->first->frameNumber() == pair->second->frameNumber());
+			assert(pair->first->sequenceID == pair->second->sequenceID);
 
 			m_rgbQueue.pop();
 			m_depthQueue.pop();
 			if(skipping) {
-				std::cout << "Skipping frames: " << pair->first->frameNumber() << std::endl;
+				std::cout << "Skipping frames: " << pair->first->sequenceID << std::endl;
 			}
 			skipping = true;
 		}
@@ -281,14 +281,14 @@ std::optional<ObjectRecognition3d::ChannelReadPair> ObjectRecognition3d::getSync
 }
 
 void ObjectRecognition3d::processPair(const ChannelReadPair& pair) {
-	const RGBImgType& rgbImage = pair.first;
-	const DepthImgType& depthImage = pair.second;
-	RGBImgType rgbSmall;
-	rgbSmall.frameNumber() = rgbImage.frameNumber();
+	const Stamped<RGBImgType>& rgbImage = pair.first;
+	const Stamped<DepthImgType>& depthImage = pair.second;
+	Stamped<RGBImgType> rgbSmall;
+	rgbSmall.sequenceID = pair.first->sequenceID;
 	cv::resize(rgbImage, rgbSmall, cv::Size(rgbImage.width()/4, rgbImage.height()/4));
 
 	// start a new detection thread if none is running
-	startDetection(rgbSmall);
+	startDetection(pair.first);
 
 	// track last detections
 	trackLastDetections(rgbSmall, depthImage);
@@ -301,7 +301,6 @@ void ObjectRecognition3d::processPair(const ChannelReadPair& pair) {
 
 	RGBImgType outRGB;
 	rgbImage.getMat().copyTo(outRGB);
-	outRGB.frameNumber() = rgbImage.frameNumber();
 
 	for(const auto& d : m_detections) {
 		cv::Rect resizedRect = rect2ImageCoords(outRGB, d.box);
@@ -334,26 +333,27 @@ void ObjectRecognition3d::processPair(const ChannelReadPair& pair) {
 		std::cout << "Draw detection took: " << drawDuration << "ms" << std::endl;
 
 	auto wRGBMarked = m_channelRGBMarked.write();
+	wRGBMarked->sequenceID = pair.first->sequenceID;
 	wRGBMarked->value() = outRGB;
 
 	// post detections
 	auto wChannelDetections = m_channelDetections.write();
+	wChannelDetections->sequenceID = pair.first->sequenceID;
 	wChannelDetections->value() = m_detections;
 }
 
-void ObjectRecognition3d::startDetection(const ObjectRecognition3d::RGBImgType& rgbImage) {
+void ObjectRecognition3d::startDetection(const ChannelRead<RGBImgType>& rgbImage) {
 	// only start if non is running
 	if(m_bgStatus == BackgroundStatus::WAITING) {
 		std::lock_guard<std::mutex> imageGuard(m_detectionImageMutex);
-
-		rgbImage.getMat().copyTo(m_detectionImage);
-		m_detectionImage.frameNumber() = rgbImage.frameNumber();
+		m_detectionImage = rgbImage;
 
 		m_bgStatus = BackgroundStatus::WORKING;
 	}
 }
 
-void ObjectRecognition3d::trackLastDetections(const RGBImgType& rgbImage, const DepthImgType& depthImage) {
+void ObjectRecognition3d::trackLastDetections(const Stamped<RGBImgType>& rgbImage,
+											  const Stamped<DepthImgType>& depthImage) {
 	auto trackingStart = std::chrono::system_clock::now();
 
 	std::stack<size_t> lostIndices;
@@ -371,7 +371,7 @@ void ObjectRecognition3d::trackLastDetections(const RGBImgType& rgbImage, const 
 			box = clampRect(rgbImage, box);
 			auto normalized = normalizeRect(rgbImage, box);
 			auto& d = m_detections[i];
-			d.frameNumber = rgbImage.frameNumber();
+			d.frameNumber = rgbImage.sequenceID;
 			d.box = normalized;
 			d.pos = calcPosition(depthImage, normalized);
 		} else {
@@ -403,7 +403,8 @@ void ObjectRecognition3d::trackLastDetections(const RGBImgType& rgbImage, const 
 		std::cout << "Tracking " << m_trackers.size() << " detections took: " << trackingDuration << "ms" << std::endl;
 }
 
-void ObjectRecognition3d::trackNewDetections(const ObjectRecognition3d::RGBImgType& rgbImage, const ObjectRecognition3d::DepthImgType& depthImage) {
+void ObjectRecognition3d::trackNewDetections(const Stamped<RGBImgType>& rgbImage,
+											 const Stamped<DepthImgType>& depthImage) {
 	auto trackingStart = std::chrono::system_clock::now();
 
 	if(m_bgStatus != BackgroundStatus::DONE) {
@@ -420,8 +421,8 @@ void ObjectRecognition3d::trackNewDetections(const ObjectRecognition3d::RGBImgTy
 		std::stack<size_t> lostIndices;
 		for(size_t i = 0; i < m_bgDetections.size(); ++i) {
 			const auto& d = m_bgDetections[i];
-			cv::Rect2d box = rect2ImageCoords(m_detectionImage, d.box);
-			m_bgTrackers[i]->init(m_detectionImage, box);
+			cv::Rect2d box = rect2ImageCoords(*m_detectionImage, d.box);
+			m_bgTrackers[i]->init(*m_detectionImage, box);
 
 			// try to track to current image
 			if(m_bgTrackers[i]->update(rgbImage, box)) {
@@ -429,7 +430,7 @@ void ObjectRecognition3d::trackNewDetections(const ObjectRecognition3d::RGBImgTy
 				box = clampRect(rgbImage, box);
 				auto normalized = normalizeRect(rgbImage, box);
 				auto& d = m_bgDetections[i];
-				d.frameNumber = rgbImage.frameNumber();
+				d.frameNumber = rgbImage.sequenceID;
 				d.box = normalized;
 				d.pos = calcPosition(depthImage, normalized);
 			} else {
@@ -623,7 +624,7 @@ float ObjectRecognition3d::overlapPercentage(const cv::Rect2f& r0, const cv::Rec
 
 ObjectRecognition3d::DetectionContainer ObjectRecognition3d::readDetections(
 		const std::vector<tensorflow::Tensor>& outputs,
-		const DepthImgType& depthImage) {
+		const Stamped<DepthImgType>& depthImage) {
 	DetectionContainer detections;
 
 	int32_t numDetections = readNumDetections(outputs);
@@ -635,7 +636,7 @@ ObjectRecognition3d::DetectionContainer ObjectRecognition3d::readDetections(
 		Detection d = readDetection(outputs, i);
 
 		// give it the frame number of the current image
-		d.frameNumber = depthImage.frameNumber();
+		d.frameNumber = depthImage.sequenceID;
 
 		// calculate the center position of the dectection
 		d.pos = calcPosition(depthImage, d.box);

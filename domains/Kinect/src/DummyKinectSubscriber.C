@@ -65,8 +65,9 @@ MIRA_OBJECT(DummyKinectSubscriber)
 
 public:
 	typedef kinectdatatypes::RegistrationData	RegistrationData;
-	typedef kinectdatatypes::RGBImgType			RGBImgType;
-	typedef kinectdatatypes::DepthImgType		DepthImgType;
+
+	typedef Img<uint8_t, 3>	RGBImgType;
+	typedef Img<float, 1>	DepthImgType;
 
 	DummyKinectSubscriber();
 

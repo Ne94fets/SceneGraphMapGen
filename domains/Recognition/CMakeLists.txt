@@ -59,3 +59,7 @@ MIRA_ADD_LIBRARY(PointCloudRegistration
 		pcl_registration
 		pcl_sample_consensus
 )
+
+set_target_properties(PointCloudRegistration PROPERTIES
+	CXX_STANDARD 17
+	CXX_EXTENSIONS OFF)

@@ -84,8 +84,9 @@ class ObjectRecognition3d : public MicroUnit {
 
 public:
 	typedef kinectdatatypes::RegistrationData	RegistrationData;
-	typedef kinectdatatypes::RGBImgType			RGBImgType;
-	typedef kinectdatatypes::DepthImgType		DepthImgType;
+
+	typedef Img<uint8_t, 3>	RGBImgType;
+	typedef Img<float, 1>	DepthImgType;
 
 	typedef recognitiondatatypes::Detection				Detection;
 	typedef recognitiondatatypes::DetectionContainer	DetectionContainer;
@@ -120,9 +121,11 @@ private:
 	std::optional<ChannelReadPair> getSyncedPair();
 
 	void processPair(const ChannelReadPair& pair);
-	void startDetection(const RGBImgType& rgbImage);
-	void trackLastDetections(const RGBImgType& rgbImage, const DepthImgType& depthImage);
-	void trackNewDetections(const RGBImgType& rgbImage, const DepthImgType& depthImage);
+	void startDetection(const ChannelRead<RGBImgType>& rgbImage);
+	void trackLastDetections(const Stamped<RGBImgType>& rgbImage,
+							 const Stamped<DepthImgType>& depthImage);
+	void trackNewDetections(const Stamped<RGBImgType>& rgbImage,
+							const Stamped<DepthImgType>& depthImage);
 
 	cv::Point3f getXYZ(const int r, const int c, const float depth,
 					   const float cx, const float cy,
@@ -139,7 +142,7 @@ private:
 	cv::Rect2d			clampRect(const Img<>& image, const cv::Rect2d& rect);
 	float				overlapPercentage(const cv::Rect2f& r0, const cv::Rect2f& r1);
 	DetectionContainer	readDetections(const std::vector<tf::Tensor>& outputs,
-									   const DepthImgType& depthImage);
+									   const Stamped<DepthImgType>& depthImage);
 
 	std::vector<tf::Tensor> detect(const RGBImgType& rgbImage);
 
@@ -175,9 +178,9 @@ private:
 	std::thread*	m_trackThread = nullptr;
 	std::thread*	m_bgThread = nullptr;
 
-	BackgroundStatus	m_bgStatus = BackgroundStatus::WAITING;
-	RGBImgType			m_detectionImage;
-	std::mutex			m_detectionImageMutex;
+	BackgroundStatus		m_bgStatus = BackgroundStatus::WAITING;
+	ChannelRead<RGBImgType>	m_detectionImage;
+	std::mutex				m_detectionImageMutex;
 
 	std::vector<ImgDepthPoint>			m_calcPositionBuffer;
 
