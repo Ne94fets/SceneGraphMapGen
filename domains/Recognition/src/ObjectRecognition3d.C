@@ -366,9 +366,19 @@ void ObjectRecognition3d::trackLastDetections(const Stamped<RGBImgType>& rgbImag
 			auto trackingEnd = std::chrono::system_clock::now();
 			auto trackingDuration = std::chrono::duration_cast<std::chrono::milliseconds>(trackingEnd - trackingStart).count();
 			if(trackingDuration > 1000/30)
-				std::cout << "Tracking " << i << " took: " << trackingDuration << "ms" << std::endl;
-			// update detection and clamp box
+				std::cout << "Tracking #" << i << " took: " << trackingDuration << "ms" << std::endl;
+
+			// clamp box
 			box = clampRect(rgbImage, box);
+
+			// tracked outside of the image if width and height are smaller than zero after clamping
+			if(box.width < 1 || box.height < 1) {
+				lostIndices.push(i);
+				std::cout << "Tracked object #" << i << " is outside of image" << std::endl;
+				continue;
+			}
+
+			// update detection
 			auto normalized = normalizeRect(rgbImage, box);
 			auto& d = m_detections[i];
 			d.frameNumber = rgbImage.sequenceID;
@@ -379,7 +389,7 @@ void ObjectRecognition3d::trackLastDetections(const Stamped<RGBImgType>& rgbImag
 			auto trackingEnd = std::chrono::system_clock::now();
 			auto trackingDuration = std::chrono::duration_cast<std::chrono::milliseconds>(trackingEnd - trackingStart).count();
 			if(trackingDuration > 1000/30)
-				std::cout << "Tracking " << i << " lost took: " << trackingDuration << "ms" << std::endl;
+				std::cout << "Tracking #" << i << " lost took: " << trackingDuration << "ms" << std::endl;
 		}
 	}
 
@@ -418,18 +428,27 @@ void ObjectRecognition3d::trackNewDetections(const Stamped<RGBImgType>& rgbImage
 		for(size_t i = m_bgTrackers.size(); i < m_bgDetections.size(); ++i)
 			m_bgTrackers.push_back(cv::TrackerKCF::create());
 
+		cv::Mat resizedDetectionImage;
+		cv::resize(*m_detectionImage, resizedDetectionImage, rgbImage.size());
+
 		std::stack<size_t> lostIndices;
 		for(size_t i = 0; i < m_bgDetections.size(); ++i) {
-			const auto& d = m_bgDetections[i];
-			cv::Rect2d box = rect2ImageCoords(*m_detectionImage, d.box);
-			m_bgTrackers[i]->init(*m_detectionImage, box);
+			auto& d = m_bgDetections[i];
+			cv::Rect2d box = rect2ImageCoords(resizedDetectionImage, d.box);
+			m_bgTrackers[i]->init(resizedDetectionImage, box);
 
 			// try to track to current image
 			if(m_bgTrackers[i]->update(rgbImage, box)) {
-				// update detection and clamp box
+				// clamp box
 				box = clampRect(rgbImage, box);
+
+				if(box.width < 0 || box.height < 0) {
+					lostIndices.push(i);
+					continue;
+				}
+
+				// update detection
 				auto normalized = normalizeRect(rgbImage, box);
-				auto& d = m_bgDetections[i];
 				d.frameNumber = rgbImage.sequenceID;
 				d.box = normalized;
 				d.pos = calcPosition(depthImage, normalized);
