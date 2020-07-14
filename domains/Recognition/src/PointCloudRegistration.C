@@ -77,12 +77,10 @@ class PointCloudRegistration : public MicroUnit
 MIRA_OBJECT(PointCloudRegistration)
 public:
 	typedef kinectdatatypes::RegistrationData	KinectRegistrationData;
-	typedef kinectdatatypes::DepthImgType		DepthImgType;
+	typedef Img<float, 1>						DepthImgType;
 	typedef PointXYZ							PointType;
 	typedef Eigen::Matrix4f						TransformType;
 	typedef PointCloud<PointType>				PointCloudType;
-
-	typedef kinectdatatypes::NumberedType<TransformType>	NumberedTransform;
 
 public:
 
@@ -133,8 +131,8 @@ private:
 
 	TransformType		m_globalTransform = TransformType::Identity();
 
-	Channel<NumberedTransform>	m_channelGlobalTransfrom;
-	Channel<NumberedTransform>	m_channelLocalTransform;
+	Channel<TransformType>	m_channelGlobalTransfrom;
+	Channel<TransformType>	m_channelLocalTransform;
 };
 
 // Define a new point representation for < x, y, z >
@@ -170,8 +168,8 @@ void PointCloudRegistration::initialize() {
 	// TODO: subscribe and publish all required channels
 	//subscribe<Pose2>("Pose", &PointCloudRegistration::onPoseChanged);
 	//mChannel = publish<Img<>>("Image");
-	m_channelGlobalTransfrom = publish<NumberedTransform>("PCGlobalTransform");
-	m_channelLocalTransform = publish<NumberedTransform>("PCLocalTransform");
+	m_channelGlobalTransfrom = publish<TransformType>("PCGlobalTransform");
+	m_channelLocalTransform = publish<TransformType>("PCLocalTransform");
 
 	subscribe<KinectRegistrationData>("KinectRegData", &PointCloudRegistration::onKinectRegistrationData);
 	subscribe<DepthImgType>("DepthImage", &PointCloudRegistration::onDepthImage);
@@ -203,16 +201,15 @@ void PointCloudRegistration::onDepthImage(ChannelRead<DepthImgType> image) {
 		auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime-startTime).count();
 		std::cout << "PCL align took: " << duration << "ms" << std::endl;
 
+		// get current time
+		auto timestamp = Time::now();
+
 		// publish local transfrom
-		NumberedTransform trans;
-		trans.matrix() = transform;
-		trans.frameNumber() = image->frameNumber();
-		m_channelLocalTransform.post(trans);
+		m_channelLocalTransform.post(Stamped<TransformType>(transform, timestamp, image->sequenceID));
 
 		// accumulate transform
 		m_globalTransform = transform * m_globalTransform;
-		trans.matrix() = m_globalTransform;
-		m_channelGlobalTransfrom.post(trans);
+		m_channelGlobalTransfrom.post(Stamped<TransformType>(m_globalTransform, timestamp, image->sequenceID));
 
 		intervalCnt = 0;
 		m_lastCloud = newCloud;
