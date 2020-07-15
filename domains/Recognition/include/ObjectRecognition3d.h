@@ -61,6 +61,7 @@
 
 #include <opencv2/tracking.hpp>
 #include <opencv2/tracking/tracker.hpp>
+#include <opencv2/dnn.hpp>
 
 using namespace mira;
 
@@ -144,7 +145,7 @@ private:
 	DetectionContainer	readDetections(const std::vector<tf::Tensor>& outputs,
 									   const Stamped<DepthImgType>& depthImage);
 
-	std::vector<tf::Tensor> detect(const RGBImgType& rgbImage);
+	std::vector<Detection> detect(const RGBImgType& rgbImage);
 
 	// void onPoseChanged(ChannelRead<Pose2> pose);
 
@@ -167,6 +168,7 @@ private:
 	std::queue<ChannelRead<RGBImgType>>		m_rgbQueue;
 
 	tf::Session*	m_session = nullptr;
+	cv::dnn::DetectionModel* m_net = nullptr;
 
 	RegistrationData	m_regData;
 	bool				m_hasRegData = false;
