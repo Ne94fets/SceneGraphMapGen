@@ -1,6 +1,5 @@
 
 MIRA_REQUIRE_PACKAGE(KinectDataTypes)
-MIRA_REQUIRE_PACKAGE(GUIVisualization)
 
 ###############################################################################
 
@@ -26,5 +25,4 @@ MIRA_ADD_LIBRARY(KinectDataTypes
 		MIRABase
 		MIRAFramework
 		libfreenect2.so
-		GUIVisualization
 )
