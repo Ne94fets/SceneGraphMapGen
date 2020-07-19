@@ -91,11 +91,7 @@ ObjectRecognition3d::ObjectRecognition3d() {
 
 ObjectRecognition3d::~ObjectRecognition3d() {
 	m_shutdown = true;
-	if(m_session)
-		delete m_session;
-
-	if(m_net)
-		delete m_net;
+	delete m_session;
 
 	if(m_trackThread) {
 		m_trackThread->join();
@@ -124,13 +120,6 @@ void ObjectRecognition3d::initialize() {
 	status = m_session->Create(graphDef);
 	if(!status.ok()) {
 		throw std::runtime_error(status.ToString());
-	}
-
-	try {
-		m_net = new cv::dnn::DetectionModel("/mnt/hdd/steffen/Projects/GraphMap/external/models/YOLO/yolov3.weights",
-											"/mnt/hdd/steffen/Projects/GraphMap/external/models/YOLO/yolov3.cfg");
-	} catch (std::exception& e) {
-		std::cout << e.what() << std::endl;
 	}
 
 	subscribe<RegistrationData>("KinectRegData", &ObjectRecognition3d::onRegistrationData);
@@ -680,61 +669,42 @@ ObjectRecognition3d::DetectionContainer ObjectRecognition3d::readDetections(
 std::vector<ObjectRecognition3d::Detection> ObjectRecognition3d::detect(
 		const ObjectRecognition3d::RGBImgType& rgbImage) {
 	auto imgSize = rgbImage.size();
-	cv::Mat detMat;
-	cv::Size detSize(rgbImage.width()/2, rgbImage.width()/2);
-	cv::resize(rgbImage, detMat, detSize);
 
 	std::vector<Detection> detections;
 
-	// use opencv net if there is one
-	if(m_net) {
-		std::vector<int> classIds;
-		std::vector<float> conf;
-		std::vector<cv::Rect> boxes;
-		m_net->setInputSize(detSize);
-		m_net->detect(detMat, classIds, conf, boxes);
+	tf::Tensor inTensor(tf::DataType::DT_UINT8,
+						tf::TensorShape({1, imgSize.height(), imgSize.width(), 3}),
+						new Vector2TensorBuffer(
+							const_cast<void*>(reinterpret_cast<const void*>(rgbImage.data())),
+							static_cast<size_t>(imgSize.width() * imgSize.height()) *
+							3 * sizeof(uint8_t)));
+	std::vector<std::pair<std::string, tf::Tensor>> inputs = {
+		{"image_tensor", inTensor},
+	};
 
-		for(size_t i = 0; i < classIds.size(); ++i) {
-			Detection d;
-			d.type = classIds[i] + 1;
-			d.confidence = conf[i];
-			d.box = normalizeRect(detMat, boxes[i]);
-			detections.push_back(d);
-		}
-	} else {	// use tensorflow
-		tf::Tensor inTensor(tf::DataType::DT_UINT8,
-							tf::TensorShape({1, imgSize.height(), imgSize.width(), 3}),
-							new Vector2TensorBuffer(
-								const_cast<void*>(reinterpret_cast<const void*>(rgbImage.data())),
-								static_cast<size_t>(imgSize.width() * imgSize.height()) *
-								3 * sizeof(uint8_t)));
-		std::vector<std::pair<std::string, tf::Tensor>> inputs = {
-			{"image_tensor", inTensor},
-		};
+	std::vector<tf::Tensor> outputs;
 
-		std::vector<tf::Tensor> outputs;
+	// Run the session, evaluating our "c" operation from the graph
+	tf::Status status = m_session->Run(
+		inputs, {
+			"num_detections",
+			"detection_boxes",
+			"detection_scores",
+			"detection_classes"
+		},
+		{},
+		&outputs);
 
-		// Run the session, evaluating our "c" operation from the graph
-		tf::Status status = m_session->Run(
-			inputs, {
-				"num_detections",
-				"detection_boxes",
-				"detection_scores",
-				"detection_classes"
-			},
-			{},
-			&outputs);
+	if(!status.ok()) {
+		std::cout << status.ToString() << "\n";
+	}
 
-		if(!status.ok()) {
-			std::cout << status.ToString() << "\n";
-		}
+	int32_t numDetections = readNumDetections(outputs);
+	assert(numDetections >= 0);
+	detections.reserve(static_cast<size_t>(numDetections));
 
-		int32_t numDetections = readNumDetections(outputs);
-		assert(numDetections >= 0);
-		detections.reserve(static_cast<size_t>(numDetections));
-
-		for(int32_t i = 0; i < numDetections; ++i)
-			detections.push_back(readDetection(outputs, i));
+	for(int32_t i = 0; i < numDetections; ++i) {
+		detections.push_back(readDetection(outputs, i));
 	}
 
 	return detections;

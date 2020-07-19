@@ -61,7 +61,6 @@
 
 #include <opencv2/tracking.hpp>
 #include <opencv2/tracking/tracker.hpp>
-#include <opencv2/dnn.hpp>
 
 using namespace mira;
 
@@ -168,7 +167,6 @@ private:
 	std::queue<ChannelRead<RGBImgType>>		m_rgbQueue;
 
 	tf::Session*	m_session = nullptr;
-	cv::dnn::DetectionModel* m_net = nullptr;
 
 	RegistrationData	m_regData;
 	bool				m_hasRegData = false;
