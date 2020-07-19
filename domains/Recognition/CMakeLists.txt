@@ -15,10 +15,6 @@ MIRA_ADD_DOCUMENTATION(Recognition
 
 ###############################################################################
 
-INCLUDE_DIRECTORIES(${CMAKE_CURRENT_LIST_DIR}/include)
-
-###############################################################################
-
 MIRA_ADD_LIBRARY(ObjectRecognition3d
 	SHARED
 	PACKAGE Recognition
@@ -30,7 +26,9 @@ MIRA_ADD_LIBRARY(ObjectRecognition3d
 	LINK_LIBS
 		MIRABase
 		MIRAFramework
+		opencv_core
 		opencv_tracking
+		opencv_dnn_objdetect
 		tensorflow_cc
 		RecognitionDataTypes
 		KinectDataTypes

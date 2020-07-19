@@ -80,6 +80,7 @@ if(NOT EXISTS "${OPENCV_DIR}")
 	execute_process(
 		COMMAND cmake
 			-DOPENCV_EXTRA_MODULES_PATH=${OPENCV_CONTRIB_DIR}/modules
+			-Dopencv_dnn_objdetect=ON
 			-DBUILD_opencv_legacy=OFF
 			-DCMAKE_BUILD_TYPE=Release
 			-DCMAKE_INSTALL_PREFIX=${OPENCV_DIR} ..
@@ -107,7 +108,7 @@ if(NOT EXISTS "${OPENCV_DIR}")
 endif()
 
 find_package(OpenCV 4.3.0 REQUIRED
-	COMPONENTS core imgproc video
+	COMPONENTS core imgproc video dnn
 	HINTS ${OPENCV_DIR})
 include_directories(OpenCV_INCLUDE_DIR)
 
