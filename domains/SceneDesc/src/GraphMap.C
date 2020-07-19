@@ -99,6 +99,10 @@ private:
 
 	void analyseDetections(const DetectionContainer& detections);
 
+	bool existsObject(const Detection& d);
+	void addObject(const Detection& d);
+	void addRelation(const Detection& d, const Detection& other, cv::Point3f& relativeOffset);
+
 private:
 	neo4j_connection_t* m_connection = nullptr;
 
@@ -134,11 +138,6 @@ void GraphMap::initialize() {
 }
 
 void GraphMap::onObjectDetection(ChannelRead<DetectionContainer> detections) {
-	for(const auto& detection : detections->value()) {
-		std::string typeName = Detection::getTypeName(detection.type);
-		std::cout << "Detected " << typeName << std::endl;
-	}
-
 	analyseDetections(detections->value());
 }
 
@@ -146,113 +145,116 @@ void GraphMap::analyseDetections(const DetectionContainer& detections) {
 	if(detections.empty())
 		return;
 
-	// filter out detections
-	// use detections with highest confidece when overlapping
-	std::vector<Detection> filtered;
-	filtered.reserve(detections.size());
+	const size_t numDet = detections.size();
 
-	for(size_t i = 0; i < detections.size(); ++i) {
+	// insert missing objects
+	for(size_t i = 0; i < numDet; ++i) {
 		const auto& d0 = detections[i];
-		bool overlapWin = true;
-		for(size_t j = 0; j < detections.size(); ++j) {
+
+		// insert object in db if not existing
+		if(existsObject(d0)) { continue; }
+
+		addObject(d0);
+
+		// calc relations to object if other exists
+		for(size_t j = 0; j < numDet; ++j) {
 			const auto& d1 = detections[j];
-			if(d1.confidence < d0.confidence)
-				continue;
-			if(d0.box.x + d0.box.width <= d1.box.x ||
-					d1.box.x + d1.box.width <= d0.box.x ||
-					d0.box.y + d0.box.height <= d1.box.y ||
-					d1.box.y + d1.box.height <= d0.box.y) {
-				overlapWin = false;
-			}
-		}
+			if(i == j || !existsObject(d1)) { continue; }
 
-		if(overlapWin)
-			filtered.push_back(d0);
-	}
-
-	const size_t cols = filtered.size();
-	std::vector<cv::Point3f> relations(cols * cols, cv::Point3f(std::numeric_limits<float>::quiet_NaN(),
-																std::numeric_limits<float>::quiet_NaN(),
-																std::numeric_limits<float>::quiet_NaN()));
-
-	std::vector<boost::uuids::uuid> uuidsForDetections;
-	uuidsForDetections.reserve(cols);
-
-
-	// insert object and calculate relative positions
-	for(size_t row = 0; row < cols-1; ++row) {
-		const auto& d0 = filtered[row];
-
-		// insert object in db
-		const unsigned int numEntries = 2;
-		neo4j_map_entry_t entries[numEntries];
-		std::string detectionType = Detection::getTypeName(d0.type);
-
-		boost::uuids::uuid uuid = boost::uuids::random_generator()();
-		uuidsForDetections.push_back(uuid);
-
-		std::string uuidStr = boost::uuids::to_string(uuid);
-		entries[0] = neo4j_map_kentry(neo4j_string("name"),
-									  neo4j_ustring(uuidStr.c_str(),
-													static_cast<unsigned int>(uuidStr.length())));
-		entries[1] = neo4j_map_kentry(neo4j_string("type"),
-									  neo4j_ustring(detectionType.c_str(),
-													static_cast<unsigned int>(detectionType.length())));
-		neo4j_value_t params = neo4j_map(entries, numEntries);
-		neo4j_result_stream_t* results = neo4j_run(m_connection, "CREATE (name:object {type:%s"
-																 "position: {x:posx, y:posy, z:posz}})", params);
-		if(!results)
-			throw std::runtime_error("Could not execute neo4j statement");
-
-		neo4j_result_t* result = neo4j_fetch_next(results);
-		if(!result)
-			throw std::runtime_error("Could not fetch neo4j result");
-
-		neo4j_value_t value = neo4j_result_field(result, 0);
-		char buf[128];
-		neo4j_tostring(value, buf, sizeof(buf));
-		std::cout << buf << std::endl;
-
-		neo4j_close_results(results);
-
-		// calc relations to object
-		cv::Point3f* rowStart = &relations[row * cols];
-		for(size_t col = row+1; col < cols; ++col) {
-			const auto& d1 = filtered[col];
 			cv::Point3f rel = d1.pos - d0.pos;
-			rowStart[col] = rel;
+			addRelation(d0, d1, rel);
 		}
 	}
+}
 
-	// insert all object relations
-	for(size_t i = 0; i < cols; ++i) {
-		const auto& d0 = filtered[i];
-		for(size_t j = 0; j < cols; ++j) {
-			const auto& d1 = filtered[j];
+bool GraphMap::existsObject(const GraphMap::Detection& d) {
+	const unsigned int numEntries = 1;
+	neo4j_map_entry_t entries[numEntries];
+	std::string uuidStr = boost::uuids::to_string(d.uuid);
+	entries[0] = neo4j_map_kentry(neo4j_string("uuid"),
+								  neo4j_ustring(uuidStr.c_str(),
+												static_cast<unsigned int>(uuidStr.length())));
+	neo4j_value_t params = neo4j_map(entries, numEntries);
+	neo4j_result_stream_t* results = neo4j_run(m_connection, "MATCH (object:object "
+															 "{uuid: $uuid}) "
+															 "RETURN object", params);
 
-			const unsigned int numEntries = 2;
-			neo4j_map_entry_t entries[numEntries];
-			std::string detectionType = Detection::getTypeName(d0.type);
-			entries[0] = neo4j_map_kentry(neo4j_string("name"),
-										  neo4j_ustring(detectionType.c_str(),
-														static_cast<unsigned int>(detectionType.length())));
-			neo4j_value_t params = neo4j_map(entries, numEntries);
-			neo4j_result_stream_t* results = neo4j_run(m_connection, "RETURN 'hello world'", params);
-			if(!results)
-				throw std::runtime_error("Could not execute neo4j statement");
-
-			neo4j_result_t* result = neo4j_fetch_next(results);
-			if(!result)
-				throw std::runtime_error("Could not fetch neo4j result");
-
-			neo4j_value_t value = neo4j_result_field(result, 0);
-			char buf[128];
-			neo4j_tostring(value, buf, sizeof(buf));
-			std::cout << buf << std::endl;
-
-			neo4j_close_results(results);
-		}
+	if(neo4j_check_failure(results)) {
+		const char* msg = neo4j_error_message(results);
+		throw std::runtime_error(msg);
 	}
+
+	neo4j_result_t* result = neo4j_fetch_next(results);
+	if(!result) {
+		return false;
+	}
+
+	neo4j_close_results(results);
+
+	return true;
+}
+
+void GraphMap::addObject(const GraphMap::Detection& d) {
+	const unsigned int numEntries = 2;
+	neo4j_map_entry_t entries[numEntries];
+	std::string detectionType = Detection::getTypeName(d.type);
+
+	std::string uuidStr = boost::uuids::to_string(d.uuid);
+	entries[0] = neo4j_map_kentry(neo4j_string("uuid"),
+								  neo4j_ustring(uuidStr.c_str(),
+												static_cast<unsigned int>(uuidStr.length())));
+	entries[1] = neo4j_map_kentry(neo4j_string("type"),
+								  neo4j_ustring(detectionType.c_str(),
+												static_cast<unsigned int>(detectionType.length())));
+	neo4j_value_t params = neo4j_map(entries, numEntries);
+	neo4j_result_stream_t* results = neo4j_send(m_connection, "CREATE (:object {"
+															  "uuid: $uuid, "
+															  "name: $type})", params);
+
+	if(neo4j_check_failure(results)) {
+		const char* msg = neo4j_error_message(results);
+		throw std::runtime_error(msg);
+	}
+
+	neo4j_close_results(results);
+}
+
+void GraphMap::addRelation(
+		const GraphMap::Detection& d,
+		const GraphMap::Detection& other,
+		cv::Point3f& relativeOffset) {
+	const unsigned int numEntries = 5;
+	neo4j_map_entry_t entries[numEntries];
+
+	std::string uuidStr = boost::uuids::to_string(d.uuid);
+	entries[0] = neo4j_map_kentry(neo4j_string("uuid_d"),
+								  neo4j_ustring(uuidStr.c_str(),
+												static_cast<unsigned int>(uuidStr.length())));
+
+	std::string uuidOtherStr = boost::uuids::to_string(other.uuid);
+	entries[1] = neo4j_map_kentry(neo4j_string("uuid_other"),
+								  neo4j_ustring(uuidOtherStr.c_str(),
+												static_cast<unsigned int>(uuidOtherStr.length())));
+	entries[2] = neo4j_map_kentry(neo4j_string("rel_x"),
+								  neo4j_float(static_cast<double>(relativeOffset.x)));
+	entries[3] = neo4j_map_kentry(neo4j_string("rel_y"),
+								  neo4j_float(static_cast<double>(relativeOffset.y)));
+	entries[4] = neo4j_map_kentry(neo4j_string("rel_z"),
+								  neo4j_float(static_cast<double>(relativeOffset.z)));
+	neo4j_value_t params = neo4j_map(entries, numEntries);
+	neo4j_result_stream_t* results = neo4j_send(m_connection, "MATCH (a:object), (b:object) "
+															  "WHERE a.uuid = $uuid_d AND b.uuid = $uuid_other "
+															  "CREATE (a)"
+															  "-[:OFFSET {x: $rel_x, y: $rel_y, z: $rel_z}]->"
+															  "(b)", params);
+
+	if(neo4j_check_failure(results)) {
+		const char* msg = neo4j_error_message(results);
+		throw std::runtime_error(msg);
+	}
+
+	neo4j_close_results(results);
+
 }
 
 ///////////////////////////////////////////////////////////////////////////////

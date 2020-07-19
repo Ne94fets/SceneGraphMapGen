@@ -158,7 +158,8 @@ private:
 	};
 
 	bool	m_shutdown = false;
-	float	m_overlappingThreshold = 0.6f;
+	float	m_overlappingThreshold = 0.8f;
+	float	m_confidenceThreshold = 0.5f;
 
 	Channel<RGBImgType>				m_channelRGBMarked;
 	Channel<DetectionContainer>		m_channelDetections;

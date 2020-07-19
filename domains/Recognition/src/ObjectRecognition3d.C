@@ -433,6 +433,11 @@ void ObjectRecognition3d::trackNewDetections(const Stamped<RGBImgType>& rgbImage
 		std::stack<size_t> lostIndices;
 		for(size_t i = 0; i < m_bgDetections.size(); ++i) {
 			auto& d = m_bgDetections[i];
+			if(d.confidence < m_confidenceThreshold) {
+				lostIndices.push(i);
+				continue;
+			}
+
 			cv::Rect2d box = rect2ImageCoords(resizedDetectionImage, d.box);
 			m_bgTrackers[i]->init(resizedDetectionImage, box);
 
@@ -470,19 +475,31 @@ void ObjectRecognition3d::trackNewDetections(const Stamped<RGBImgType>& rgbImage
 		m_detections.reserve(m_detections.size() + m_bgDetections.size());
 		for(size_t i = 0; i < m_bgTrackers.size(); ++i) {
 			const auto& bgT = m_bgTrackers[i];
-			const auto& bgD = m_bgDetections[i];
+			auto& bgD = m_bgDetections[i];
+			cv::Tracker* fgT = nullptr;
+			Detection* fgD = nullptr;
 			float maxOverlap = 0;
-			for(auto it = m_detections.begin(); it != m_detections.end(); ++it) {
-				const auto& d = *it;
+			for(size_t j = 0; j < m_detections.size(); ++j) {
+				auto& d = m_detections[j];
 				float overlap = overlapPercentage(bgD.box, d.box);
-				if(overlap > maxOverlap)
+				if(overlap > maxOverlap) {
 					maxOverlap = overlap;
+					fgD = &d;
+					fgT = m_trackers[j];
+				}
 			}
 			// insert if not overlapping too much with an active detection
 			if(maxOverlap < m_overlappingThreshold) {
+				bgD.uuid = boost::uuids::random_generator()();
 				m_trackers.push_back(bgT);
 				m_detections.push_back(bgD);
 				lostIndices.push(i);
+			} else {	// update if overlapping much
+				fgD->box = bgD.box;
+				fgD->confidence = bgD.confidence;
+				fgD->type = bgD.type;
+				cv::Rect2d box = rect2ImageCoords(resizedDetectionImage, fgD->box);
+				fgT->init(resizedDetectionImage, box);
 			}
 		}
 
