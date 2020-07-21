@@ -100,11 +100,13 @@ private:
 	void analyseDetections(const DetectionContainer& detections);
 
 	bool existsObject(const Detection& d);
-	void addObject(const Detection& d);
+	void addRoom(const boost::uuids::uuid& room);
+	void addObject(const Detection& d, const boost::uuids::uuid& room);
 	void addRelation(const Detection& d, const Detection& other, cv::Point3f& relativeOffset);
 
 private:
 	neo4j_connection_t* m_connection = nullptr;
+	boost::uuids::uuid	m_room;
 
 	//Channel<Img<>> mChannel;
 };
@@ -114,6 +116,7 @@ private:
 GraphMap::GraphMap() {
 	// TODO: further initialization of members, etc.
 	neo4j_client_init();
+	m_room = boost::uuids::random_generator()();
 }
 
 GraphMap::~GraphMap() {
@@ -133,6 +136,9 @@ void GraphMap::initialize() {
 		ss << msg;
 		throw std::runtime_error(ss.str());
 	}
+
+	// add first room
+	addRoom(m_room);
 
 	subscribe<DetectionContainer>("ObjectDetection", &GraphMap::onObjectDetection);
 }
@@ -154,7 +160,7 @@ void GraphMap::analyseDetections(const DetectionContainer& detections) {
 		// insert object in db if not existing
 		if(existsObject(d0)) { continue; }
 
-		addObject(d0);
+		addObject(d0, m_room);
 
 		// calc relations to object if other exists
 		for(size_t j = 0; j < numDet; ++j) {
@@ -194,8 +200,30 @@ bool GraphMap::existsObject(const GraphMap::Detection& d) {
 	return true;
 }
 
-void GraphMap::addObject(const GraphMap::Detection& d) {
-	const unsigned int numEntries = 2;
+void GraphMap::addRoom(const boost::uuids::uuid& room) {
+	const unsigned int numEntries = 1;
+	neo4j_map_entry_t entries[numEntries];
+
+	std::string uuidStr = boost::uuids::to_string(room);
+	entries[0] = neo4j_map_kentry(neo4j_string("uuid"),
+								  neo4j_ustring(uuidStr.c_str(),
+												static_cast<unsigned int>(uuidStr.length())));
+
+	neo4j_value_t params = neo4j_map(entries, numEntries);
+	neo4j_result_stream_t* results = neo4j_send(m_connection, "CREATE (:room {"
+															  "uuid: $uuid, "
+															  "name: 'Room'})", params);
+
+	if(neo4j_check_failure(results)) {
+		const char* msg = neo4j_error_message(results);
+		throw std::runtime_error(msg);
+	}
+
+	neo4j_close_results(results);
+}
+
+void GraphMap::addObject(const GraphMap::Detection& d, const boost::uuids::uuid& room) {
+	const unsigned int numEntries = 3;
 	neo4j_map_entry_t entries[numEntries];
 	std::string detectionType = Detection::getTypeName(d.type);
 
@@ -206,10 +234,19 @@ void GraphMap::addObject(const GraphMap::Detection& d) {
 	entries[1] = neo4j_map_kentry(neo4j_string("type"),
 								  neo4j_ustring(detectionType.c_str(),
 												static_cast<unsigned int>(detectionType.length())));
+	std::string roomUUID = boost::uuids::to_string(room);
+	entries[2] = neo4j_map_kentry(neo4j_string("room_uuid"),
+								  neo4j_ustring(roomUUID.c_str(),
+												static_cast<unsigned int>(roomUUID.length())));
 	neo4j_value_t params = neo4j_map(entries, numEntries);
-	neo4j_result_stream_t* results = neo4j_send(m_connection, "CREATE (:object {"
+	neo4j_result_stream_t* results = neo4j_send(m_connection, "MATCH (r:room) "
+															  "WHERE r.uuid = $room_uuid "
+															  "CREATE (o:object {"
 															  "uuid: $uuid, "
-															  "name: $type})", params);
+															  "name: $type})"
+															  "CREATE (r)"
+															  "-[:CONTAINS]->"
+															  "(o)", params);
 
 	if(neo4j_check_failure(results)) {
 		const char* msg = neo4j_error_message(results);
