@@ -530,7 +530,7 @@ cv::Point3f ObjectRecognition3d::getXYZ(const int r, const int c, const float de
 
 	const float depth_val = depth / 1000.0f; //scaling factor, so that value of 1 is one meter.
 
-	if(isnan(depth_val) || depth_val <= 0.001f) {
+	if(!std::isfinite(depth_val) || depth_val <= 0.001f) {
 		//depth value is not valid
 		return cv::Point3f(bad_point, bad_point, bad_point);
 	} else {

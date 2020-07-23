@@ -47,6 +47,7 @@
 //#include <transform/Pose.h> // TODO: enable to use Pose2!
 #include <fw/MicroUnit.h>
 
+#include <thread>
 #include <chrono>
 
 #include <pcl/point_cloud.h>
@@ -59,6 +60,8 @@
 #include <pcl/registration/icp.h>
 #include <pcl/registration/icp_nl.h>
 #include <pcl/registration/transforms.h>
+
+#include <opencv2/features2d.hpp>
 
 #include "kinectdatatypes/Types.h"
 
@@ -75,16 +78,23 @@ namespace recognition {
 class PointCloudRegistration : public MicroUnit
 {
 MIRA_OBJECT(PointCloudRegistration)
+
 public:
 	typedef kinectdatatypes::RegistrationData	KinectRegistrationData;
-	typedef Img<float, 1>						DepthImgType;
-	typedef PointXYZ							PointType;
-	typedef Eigen::Matrix4f						TransformType;
-	typedef PointCloud<PointType>				PointCloudType;
+
+	typedef Img<uint8_t, 3>	RGBImgType;
+	typedef Img<float, 1>	DepthImgType;
+
+	typedef PointXYZ				PointType;
+	typedef Eigen::Matrix4f			TransformType;
+	typedef PointCloud<PointType>	PointCloudType;
+
+	typedef std::pair<ChannelRead<RGBImgType>, ChannelRead<DepthImgType>>	ChannelReadPair;
 
 public:
 
 	PointCloudRegistration();
+	~PointCloudRegistration();
 
 	template<typename Reflector>
 	void reflect(Reflector& r)
@@ -108,6 +118,12 @@ private:
 
 	void onKinectRegistrationData(ChannelRead<KinectRegistrationData> data);
 	void onDepthImage(ChannelRead<DepthImgType> image);
+	void onRGBImage(ChannelRead<RGBImgType> image);
+	void process();
+	void processPair(const ChannelReadPair& pair);
+
+	std::optional<PointCloudRegistration::ChannelReadPair> getSyncedPair();
+
 	// void onPoseChanged(ChannelRead<Pose2> pose);
 
 	// void setPose(const Pose2& pose);
@@ -117,17 +133,25 @@ private:
 			Eigen::Matrix4f& target2Src,
 			bool downsample = false);
 
-	PointCloudType::Ptr img2Cloud(const DepthImgType& img);
+	PointCloudType::Ptr pair2Cloud(const ChannelReadPair& pair);
 	bool getXYZ(int r, int c, float depth, PointType& out);
 
 private:
+	volatile bool m_shutdown = false;
 
 	float	m_cx, m_cy;
 	float	m_fx, m_fy;
 	bool	m_hasKinectRegData = false;
 
-	PointCloudType::Ptr	m_lastCloud;
-	size_t				m_processInterval = 10;
+	cv::Ptr<cv::FastFeatureDetector>	m_fastDetector;
+	PointCloudType::Ptr					m_lastCloud;
+
+	std::mutex	m_depthMutex;
+	std::mutex	m_rgbMutex;
+	std::queue<ChannelRead<DepthImgType>>	m_depthQueue;
+	std::queue<ChannelRead<RGBImgType>>		m_rgbQueue;
+
+	std::thread*	m_thread;
 
 	TransformType		m_globalTransform = TransformType::Identity();
 
@@ -162,6 +186,16 @@ private:
 
 PointCloudRegistration::PointCloudRegistration() {
 	// TODO: further initialization of members, etc.
+	m_fastDetector = cv::FastFeatureDetector::create();
+}
+
+PointCloudRegistration::~PointCloudRegistration() {
+	m_shutdown = true;
+
+	if(m_thread) {
+		m_thread->join();
+		delete m_thread;
+	}
 }
 
 void PointCloudRegistration::initialize() {
@@ -172,48 +206,146 @@ void PointCloudRegistration::initialize() {
 	m_channelLocalTransform = publish<TransformType>("PCLocalTransform");
 
 	subscribe<KinectRegistrationData>("KinectRegData", &PointCloudRegistration::onKinectRegistrationData);
+	subscribe<RGBImgType>("RGBImageFull", &PointCloudRegistration::onRGBImage);
 	subscribe<DepthImgType>("DepthImage", &PointCloudRegistration::onDepthImage);
+
+	if(!m_thread) {
+		m_thread = new std::thread([this](){ process(); });
+	}
 }
 
 void PointCloudRegistration::onKinectRegistrationData(ChannelRead<KinectRegistrationData> data) {
 	if(m_hasKinectRegData)
 		return;
 
-	m_cx = data->depth_p.cx;
-	m_cy = data->depth_p.cy;
-	m_fx = 1 / data->depth_p.fx;
-	m_fy = 1 / data->depth_p.fy;
+//	m_cx = data->depth_p.cx;
+//	m_cy = data->depth_p.cy;
+//	m_fx = 1 / data->depth_p.fx;
+//	m_fy = 1 / data->depth_p.fy;
+	m_cx = data->rgb_p.cx;
+	m_cy = data->rgb_p.cy;
+	m_fx = 1 / data->rgb_p.fx;
+	m_fy = 1 / data->rgb_p.fy;
 	m_hasKinectRegData = true;
 }
 
 void PointCloudRegistration::onDepthImage(ChannelRead<DepthImgType> image) {
-	static size_t intervalCnt = 0;
+	static size_t prevNumber = 0;
+	if(image->sequenceID != prevNumber+1) {
+		std::cout << "Missing depth image " << prevNumber+1 << " til " << image->sequenceID << std::endl;
+	}
+	prevNumber = image->sequenceID;
+
+	{
+		std::lock_guard<std::mutex> depthMutex(m_depthMutex);
+		m_depthQueue.push(image);
+	}
+}
+
+void PointCloudRegistration::onRGBImage(ChannelRead<PointCloudRegistration::RGBImgType> image) {
+	static uint32_t prevNumber = 0;
+	if(image->sequenceID != prevNumber+1) {
+		std::cout << "Missing color image " << prevNumber+1 << " til " << image->sequenceID << std::endl;
+	}
+	prevNumber = image->sequenceID;
+	{
+		std::lock_guard<std::mutex> rgbMutex(m_rgbMutex);
+		m_rgbQueue.push(image);
+	}
+}
+
+void PointCloudRegistration::process() {
+	while(!m_shutdown) {
+
+		auto startTime = std::chrono::system_clock::now();
+
+		// sync queues and get a matching pair
+		const auto optionalPair = getSyncedPair();
+		if(!optionalPair) {
+			std::this_thread::sleep_for(std::chrono::milliseconds(1));
+			continue;
+		}
+
+		// got a pair
+		const auto& pair = *optionalPair;
+
+		// process the pair
+		processPair(pair);
+
+		auto endTime = std::chrono::system_clock::now();
+		auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
+		if(duration > 1000/30)
+			std::cout << "Detectionprocess took: " << duration << "ms" << std::endl;
+	}
+}
+
+void PointCloudRegistration::processPair(const ChannelReadPair& pair) {
 	if(!m_lastCloud) {
-		m_lastCloud = img2Cloud(*image);
+		m_lastCloud = pair2Cloud(pair);
 		return;
 	}
-	if(intervalCnt++ >= m_processInterval) {
-		Eigen::Matrix4f transform;
-		auto newCloud = img2Cloud(*image);
-		auto startTime = std::chrono::system_clock::now();
-		pairAlignSrc2Target(newCloud, m_lastCloud, transform, false);
-		auto endTime = std::chrono::system_clock::now();
-		auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime-startTime).count();
-		std::cout << "PCL align took: " << duration << "ms" << std::endl;
 
-		// get current time
-		auto timestamp = Time::now();
+	Eigen::Matrix4f transform;
+	auto newCloud = pair2Cloud(pair);
+	auto startTime = std::chrono::system_clock::now();
+	pairAlignSrc2Target(newCloud, m_lastCloud, transform, false);
+	auto endTime = std::chrono::system_clock::now();
+	auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime-startTime).count();
+	std::cout << "PCL align took: " << duration << "ms" << std::endl;
 
-		// publish local transfrom
-		m_channelLocalTransform.post(Stamped<TransformType>(transform, timestamp, image->sequenceID));
+	// get current time
+	auto timestamp = Time::now();
 
-		// accumulate transform
-		m_globalTransform = transform * m_globalTransform;
-		m_channelGlobalTransfrom.post(Stamped<TransformType>(m_globalTransform, timestamp, image->sequenceID));
+	// publish local transfrom
+	m_channelLocalTransform.post(Stamped<TransformType>(transform, timestamp, pair.first->sequenceID));
 
-		intervalCnt = 0;
-		m_lastCloud = newCloud;
+	// accumulate transform
+	m_globalTransform = transform * m_globalTransform;
+	m_channelGlobalTransfrom.post(Stamped<TransformType>(m_globalTransform, timestamp, pair.first->sequenceID));
+
+	m_lastCloud = newCloud;
+}
+
+std::optional<PointCloudRegistration::ChannelReadPair> PointCloudRegistration::getSyncedPair() {
+	std::optional<ChannelReadPair> pair;
+
+	// get frame number of front image
+	{
+		std::lock_guard rgbGuard(m_rgbMutex);
+		std::lock_guard depthGuard(m_depthMutex);
+		if(m_depthQueue.empty() || m_rgbQueue.empty()) {
+			return {};
+		}
+
+		bool skipping = false;
+
+		while(m_rgbQueue.size() > 1 && m_depthQueue.size() > 1) {
+			// pop rgb images before next depth image
+			while(!m_rgbQueue.empty() && m_rgbQueue.front()->sequenceID < m_depthQueue.front()->sequenceID) {
+				std::cout << "No matching depth image. Dropping RGB image. FrameNumber: " << m_rgbQueue.front()->sequenceID << std::endl;
+				m_rgbQueue.pop();
+			}
+			// pop depth images before next rgb image
+			while(!m_depthQueue.empty() && m_depthQueue.front()->sequenceID < m_rgbQueue.front()->sequenceID) {
+				std::cout << "No matching rgb image. Dropping depth image. FrameNumber: " << m_depthQueue.front()->sequenceID << std::endl;
+				m_depthQueue.pop();
+			}
+
+			pair = std::make_pair(m_rgbQueue.front(), m_depthQueue.front());
+
+			// rgb and depth image should be synchronized and have same frame number now
+			assert(pair->first->sequenceID == pair->second->sequenceID);
+
+			m_rgbQueue.pop();
+			m_depthQueue.pop();
+			if(skipping) {
+				std::cout << "Skipping frames: " << pair->first->sequenceID << std::endl;
+			}
+			skipping = true;
+		}
 	}
+
+	return pair;
 }
 
 void PointCloudRegistration::pairAlignSrc2Target(
@@ -268,21 +400,24 @@ void PointCloudRegistration::pairAlignSrc2Target(
 	target2Src = reg.getFinalTransformation().inverse();
 }
 
-PointCloudRegistration::PointCloudType::Ptr PointCloudRegistration::img2Cloud(
-		const DepthImgType& img) {
+PointCloudRegistration::PointCloudType::Ptr PointCloudRegistration::pair2Cloud(const ChannelReadPair& pair) {
+	std::vector<cv::KeyPoint> keyPoints;
+	m_fastDetector->detect(pair.first->getMat(), keyPoints);
+
+	std::cout << "PCL Features: " << keyPoints.size() << std::endl;
+
 	PointCloudType::Ptr newCloud = std::make_shared<PointCloudType>();
-	newCloud->reserve(static_cast<size_t>(img.width() * img.height()));
+	newCloud->reserve(keyPoints.size());
 
-	for(int r = 0; r < img.height(); ++r){
-		int rowIdx = r * img.width();
-		for(int c = 0; c < img.width(); ++c) {
-			auto depth = img.getMat().at<float>(rowIdx + c);
-			if(std::isnan(depth))
-				continue;
+	for(const auto& point : keyPoints) {
+		const auto& pt = point.pt;
+		const int r = static_cast<int>(pt.y);
+		const int c = static_cast<int>(pt.x);
+		auto depth = pair.second->getMat().at<float>(r * pair.second->getMat().cols + c);
 
-			PointType point;
-			if(getXYZ(r, c, depth, point))
-				newCloud->push_back(point);
+		PointType cloudPoint;
+		if(getXYZ(r, c, depth, cloudPoint)) {
+			newCloud->push_back(cloudPoint);
 		}
 	}
 
@@ -295,7 +430,7 @@ inline bool PointCloudRegistration::getXYZ(int r, int c, float depth, PointType&
 
 	const float depth_val = depth / 1000.0f; //scaling factor, so that value of 1 is one meter.
 
-	if(isnan(depth_val) || depth_val <= 0.001f) {
+	if(!std::isfinite(depth) || depth_val <= 0.001f) {
 		//depth value is not valid
 		return false;
 	} else {

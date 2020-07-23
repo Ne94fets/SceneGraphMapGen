@@ -50,6 +50,7 @@ MIRA_ADD_LIBRARY(PointCloudRegistration
 		MIRABase
 		MIRAFramework
         KinectDataTypes
+		opencv_features2d
         pcl_common
         pcl_kdtree
 		pcl_features
