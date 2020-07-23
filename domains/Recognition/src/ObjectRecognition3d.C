@@ -355,7 +355,8 @@ void ObjectRecognition3d::trackLastDetections(const Stamped<RGBImgType>& rgbImag
 											  const Stamped<DepthImgType>& depthImage) {
 	auto trackingStart = std::chrono::system_clock::now();
 
-	std::stack<size_t> lostIndices;
+	std::vector<size_t> lostIndices;
+	lostIndices.reserve(m_trackers.size());
 	for(size_t i = 0; i < m_trackers.size(); ++i) {
 		cv::Rect2d box;
 
@@ -372,7 +373,7 @@ void ObjectRecognition3d::trackLastDetections(const Stamped<RGBImgType>& rgbImag
 
 			// tracked outside of the image if width and height are smaller than zero after clamping
 			if(box.width < 1 || box.height < 1) {
-				lostIndices.push(i);
+				lostIndices.push_back(i);
 				std::cout << "Tracked object #" << i << " is outside of image" << std::endl;
 				continue;
 			}
@@ -384,7 +385,7 @@ void ObjectRecognition3d::trackLastDetections(const Stamped<RGBImgType>& rgbImag
 			d.box = normalized;
 			d.pos = calcPosition(depthImage, normalized);
 		} else {
-			lostIndices.push(i);
+			lostIndices.push_back(i);
 			auto trackingEnd = std::chrono::system_clock::now();
 			auto trackingDuration = std::chrono::duration_cast<std::chrono::milliseconds>(trackingEnd - trackingStart).count();
 			if(trackingDuration > 1000/30)
@@ -395,8 +396,8 @@ void ObjectRecognition3d::trackLastDetections(const Stamped<RGBImgType>& rgbImag
 	// move lost trackers to bg trackers and use them again
 	m_bgTrackers.reserve(m_bgTrackers.size() + lostIndices.size());
 	while(!lostIndices.empty()) {
-		size_t idx = lostIndices.top();
-		lostIndices.pop();
+		size_t idx = lostIndices.back();
+		lostIndices.pop_back();
 
 		m_bgTrackers.push_back(m_trackers[idx]);
 
@@ -430,11 +431,12 @@ void ObjectRecognition3d::trackNewDetections(const Stamped<RGBImgType>& rgbImage
 		cv::Mat resizedDetectionImage;
 		cv::resize(*m_detectionImage, resizedDetectionImage, rgbImage.size());
 
-		std::stack<size_t> lostIndices;
+		std::vector<size_t> lostIndices;
+		lostIndices.reserve(m_bgDetections.size());
 		for(size_t i = 0; i < m_bgDetections.size(); ++i) {
 			auto& d = m_bgDetections[i];
 			if(d.confidence < m_confidenceThreshold) {
-				lostIndices.push(i);
+				lostIndices.push_back(i);
 				continue;
 			}
 
@@ -442,29 +444,29 @@ void ObjectRecognition3d::trackNewDetections(const Stamped<RGBImgType>& rgbImage
 			m_bgTrackers[i]->init(resizedDetectionImage, box);
 
 			// try to track to current image
-			if(m_bgTrackers[i]->update(rgbImage, box)) {
-				// clamp box
-				box = clampRect(rgbImage, box);
-
-				if(box.width < 0 || box.height < 0) {
-					lostIndices.push(i);
-					continue;
-				}
-
-				// update detection
-				auto normalized = normalizeRect(rgbImage, box);
-				d.frameNumber = rgbImage.sequenceID;
-				d.box = normalized;
-				d.pos = calcPosition(depthImage, normalized);
-			} else {
-				lostIndices.push(i);
+			if(!m_bgTrackers[i]->update(rgbImage, box)) {
+				lostIndices.push_back(i);
+				continue;
 			}
+			// clamp box
+			box = clampRect(rgbImage, box);
+
+			if(box.width < 0 || box.height < 0) {
+				lostIndices.push_back(i);
+				continue;
+			}
+
+			// update detection
+			auto normalized = normalizeRect(rgbImage, box);
+			d.frameNumber = rgbImage.sequenceID;
+			d.box = normalized;
+			d.pos = calcPosition(depthImage, normalized);
 		}
 
 		// delete lost trackers
 		while(!lostIndices.empty()) {
-			long offset = static_cast<long>(lostIndices.top());
-			lostIndices.pop();
+			long offset = static_cast<long>(lostIndices.back());
+			lostIndices.pop_back();
 			m_bgDetections.erase(m_bgDetections.begin() + offset);
 			m_bgTrackers.erase(m_bgTrackers.begin() + offset);
 		}
@@ -493,7 +495,7 @@ void ObjectRecognition3d::trackNewDetections(const Stamped<RGBImgType>& rgbImage
 				bgD.uuid = boost::uuids::random_generator()();
 				m_trackers.push_back(bgT);
 				m_detections.push_back(bgD);
-				lostIndices.push(i);
+				lostIndices.push_back(i);
 			} else {	// update if overlapping much
 				fgD->box = bgD.box;
 				fgD->confidence = bgD.confidence;
@@ -505,8 +507,8 @@ void ObjectRecognition3d::trackNewDetections(const Stamped<RGBImgType>& rgbImage
 
 		// delete lost trackers since data was moved to foreground arrays
 		while(!lostIndices.empty()) {
-			long offset = static_cast<long>(lostIndices.top());
-			lostIndices.pop();
+			long offset = static_cast<long>(lostIndices.back());
+			lostIndices.pop_back();
 			m_bgDetections.erase(m_bgDetections.begin() + offset);
 			m_bgTrackers.erase(m_bgTrackers.begin() + offset);
 		}
