@@ -126,6 +126,8 @@ private:
 							 const Stamped<DepthImgType>& depthImage);
 	void trackNewDetections(const Stamped<RGBImgType>& rgbImage,
 							const Stamped<DepthImgType>& depthImage);
+	void matchDetections();
+	void matchDetectionsIndependentGreedy(const cv::Mat& resizedDetectionImage);
 
 	cv::Point3f getXYZ(const int r, const int c, const float depth,
 					   const float cx, const float cy,
@@ -162,6 +164,7 @@ private:
 	float	m_overlappingThreshold = 0.5f;
 	float	m_confidenceThreshold = 0.5f;
 
+	RGBImgType						m_currentRGBMarked;
 	Channel<RGBImgType>				m_channelRGBMarked;
 	Channel<DetectionContainer>		m_channelDetections;
 

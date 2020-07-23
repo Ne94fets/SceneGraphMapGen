@@ -286,6 +286,8 @@ void ObjectRecognition3d::processPair(const ChannelReadPair& pair) {
 	rgbSmall.sequenceID = pair.first->sequenceID;
 	cv::resize(rgbImage, rgbSmall, cv::Size(rgbImage.width()/4, rgbImage.height()/4));
 
+	rgbImage.getMat().copyTo(m_currentRGBMarked);
+
 	// start a new detection thread if none is running
 	startDetection(pair.first);
 
@@ -298,12 +300,9 @@ void ObjectRecognition3d::processPair(const ChannelReadPair& pair) {
 	// draw detections to an debug output image
 	auto drawStart = std::chrono::system_clock::now();
 
-	RGBImgType outRGB;
-	rgbImage.getMat().copyTo(outRGB);
-
 	for(const auto& d : m_detections) {
-		cv::Rect resizedRect = rect2ImageCoords(outRGB, d.box);
-		cv::rectangle(static_cast<cv::Mat>(outRGB), resizedRect, cv::Scalar(0, 0, 255), 4);
+		cv::Rect resizedRect = rect2ImageCoords(m_currentRGBMarked, d.box);
+		cv::rectangle(static_cast<cv::Mat>(m_currentRGBMarked), resizedRect, cv::Scalar(0, 0, 255), 4);
 
 		std::stringstream topText;
 		try {
@@ -315,15 +314,15 @@ void ObjectRecognition3d::processPair(const ChannelReadPair& pair) {
 		double fontScale = 1;
 		int thickness = 2;
 		auto textSize = cv::getTextSize(topText.str(), cv::FONT_HERSHEY_SIMPLEX, fontScale, thickness, &baseline);
-		auto textPos = cv::Point2i(static_cast<int>(d.box.x * outRGB.width()),
-								   static_cast<int>(d.box.y * outRGB.height()));
-		cv::rectangle(static_cast<cv::Mat>(outRGB), cv::Rect(textPos + cv::Point2i(0, -textSize.height), textSize), cv::Scalar(0, 0, 255), -1);
-		cv::putText(outRGB.getMat(), topText.str(), textPos,
+		auto textPos = cv::Point2i(static_cast<int>(d.box.x * m_currentRGBMarked.width()),
+								   static_cast<int>(d.box.y * m_currentRGBMarked.height()));
+		cv::rectangle(static_cast<cv::Mat>(m_currentRGBMarked), cv::Rect(textPos + cv::Point2i(0, -textSize.height), textSize), cv::Scalar(0, 0, 255), -1);
+		cv::putText(m_currentRGBMarked.getMat(), topText.str(), textPos,
 					cv::FONT_HERSHEY_SIMPLEX, fontScale, cv::Scalar(0, 0, 0), thickness);
 		textPos.y += textSize.height + 4;
 		std::stringstream textRelPos;
 		textRelPos << d.pos;
-		cv::putText(outRGB.getMat(), textRelPos.str(), textPos, cv::FONT_HERSHEY_SIMPLEX, fontScale, cv::Scalar(0, 0, 255), thickness);
+		cv::putText(m_currentRGBMarked.getMat(), textRelPos.str(), textPos, cv::FONT_HERSHEY_SIMPLEX, fontScale, cv::Scalar(0, 0, 255), thickness);
 	}
 
 	auto drawEnd = std::chrono::system_clock::now();
@@ -331,9 +330,12 @@ void ObjectRecognition3d::processPair(const ChannelReadPair& pair) {
 	if(drawDuration > 1000/30)
 		std::cout << "Draw detection took: " << drawDuration << "ms" << std::endl;
 
+//	m_channelRGBMarked.post(Stamped<RGBImgType>(m_currentRGBMarked,
+//												Time::now(),
+//												pair.first->sequenceID));
 	auto wRGBMarked = m_channelRGBMarked.write();
 	wRGBMarked->sequenceID = pair.first->sequenceID;
-	wRGBMarked->value() = outRGB;
+	wRGBMarked->value() = m_currentRGBMarked.clone();
 
 	// post detections
 	auto wChannelDetections = m_channelDetections.write();
@@ -443,6 +445,9 @@ void ObjectRecognition3d::trackNewDetections(const Stamped<RGBImgType>& rgbImage
 			cv::Rect2d box = rect2ImageCoords(resizedDetectionImage, d.box);
 			m_bgTrackers[i]->init(resizedDetectionImage, box);
 
+			cv::Rect2d debug = rect2ImageCoords(m_currentRGBMarked, d.box);
+			cv::rectangle(static_cast<cv::Mat>(m_currentRGBMarked), debug, cv::Scalar(255, 0, 255), 4);
+
 			// try to track to current image
 			if(!m_bgTrackers[i]->update(rgbImage, box)) {
 				lostIndices.push_back(i);
@@ -473,46 +478,7 @@ void ObjectRecognition3d::trackNewDetections(const Stamped<RGBImgType>& rgbImage
 		//lostIndices empty now
 
 		// move new trackers to foreground trackers
-		m_trackers.reserve(m_trackers.size() + m_bgTrackers.size());
-		m_detections.reserve(m_detections.size() + m_bgDetections.size());
-		for(size_t i = 0; i < m_bgTrackers.size(); ++i) {
-			const auto& bgT = m_bgTrackers[i];
-			auto& bgD = m_bgDetections[i];
-			cv::Tracker* fgT = nullptr;
-			Detection* fgD = nullptr;
-			float maxOverlap = 0;
-			for(size_t j = 0; j < m_detections.size(); ++j) {
-				auto& d = m_detections[j];
-				float overlap = overlapPercentage(bgD.box, d.box);
-				if(overlap > maxOverlap) {
-					maxOverlap = overlap;
-					fgD = &d;
-					fgT = m_trackers[j];
-				}
-			}
-			// insert if not overlapping too much with an active detection
-			if(maxOverlap < m_overlappingThreshold) {
-				bgD.uuid = boost::uuids::random_generator()();
-				m_trackers.push_back(bgT);
-				m_detections.push_back(bgD);
-				lostIndices.push_back(i);
-			} else {	// update if overlapping much
-				fgD->box = bgD.box;
-				fgD->confidence = bgD.confidence;
-				fgD->type = bgD.type;
-				cv::Rect2d box = rect2ImageCoords(resizedDetectionImage, fgD->box);
-				fgT->init(resizedDetectionImage, box);
-			}
-		}
-
-		// delete lost trackers since data was moved to foreground arrays
-		while(!lostIndices.empty()) {
-			long offset = static_cast<long>(lostIndices.back());
-			lostIndices.pop_back();
-			m_bgDetections.erase(m_bgDetections.begin() + offset);
-			m_bgTrackers.erase(m_bgTrackers.begin() + offset);
-		}
-		m_bgDetections.clear();
+		matchDetectionsIndependentGreedy(resizedDetectionImage);
 	}
 
 	m_bgStatus = BackgroundStatus::WAITING;
@@ -521,6 +487,55 @@ void ObjectRecognition3d::trackNewDetections(const Stamped<RGBImgType>& rgbImage
 	auto trackingDuration = std::chrono::duration_cast<std::chrono::milliseconds>(trackingEnd - trackingStart).count();
 	if(trackingDuration > 1000/30)
 		std::cout << "Tracking " << m_trackers.size() << " detections took: " << trackingDuration << "ms" << std::endl;
+}
+
+void ObjectRecognition3d::matchDetections() {
+
+}
+
+void ObjectRecognition3d::matchDetectionsIndependentGreedy(const cv::Mat& resizedDetectionImage) {
+	m_trackers.reserve(m_trackers.size() + m_bgTrackers.size());
+	m_detections.reserve(m_detections.size() + m_bgDetections.size());
+	std::vector<size_t> lostIndices;
+	lostIndices.reserve(m_bgDetections.size());
+	for(size_t i = 0; i < m_bgTrackers.size(); ++i) {
+		const auto& bgT = m_bgTrackers[i];
+		auto& bgD = m_bgDetections[i];
+		cv::Tracker* fgT = nullptr;
+		Detection* fgD = nullptr;
+		float maxOverlap = 0;
+		for(size_t j = 0; j < m_detections.size(); ++j) {
+			auto& d = m_detections[j];
+			float overlap = overlapPercentage(bgD.box, d.box);
+			if(overlap > maxOverlap) {
+				maxOverlap = overlap;
+				fgD = &d;
+				fgT = m_trackers[j];
+			}
+		}
+		// insert if not overlapping too much with an active detection
+		if(maxOverlap < m_overlappingThreshold) {
+			bgD.uuid = boost::uuids::random_generator()();
+			m_trackers.push_back(bgT);
+			m_detections.push_back(bgD);
+			lostIndices.push_back(i);
+		} else {	// update if overlapping much
+			fgD->box = bgD.box;
+			fgD->confidence = bgD.confidence;
+			fgD->type = bgD.type;
+			cv::Rect2d box = rect2ImageCoords(resizedDetectionImage, fgD->box);
+			fgT->init(resizedDetectionImage, box);
+		}
+	}
+
+	// delete lost trackers since data was moved to foreground arrays
+	while(!lostIndices.empty()) {
+		long offset = static_cast<long>(lostIndices.back());
+		lostIndices.pop_back();
+		m_bgDetections.erase(m_bgDetections.begin() + offset);
+		m_bgTrackers.erase(m_bgTrackers.begin() + offset);
+	}
+	m_bgDetections.clear();
 }
 
 cv::Point3f ObjectRecognition3d::getXYZ(const int r, const int c, const float depth,
@@ -537,7 +552,7 @@ cv::Point3f ObjectRecognition3d::getXYZ(const int r, const int c, const float de
 		return cv::Point3f(bad_point, bad_point, bad_point);
 	} else {
 		float x = (c + 0.5f - cx) * fracfx * depth_val;
-		float y = (r + 0.5f - cy) * fracfy * depth_val;
+		float y = -(r + 0.5f - cy) * fracfy * depth_val;
 		float z = depth_val;
 		return cv::Point3f(x, y, z);
 	}
@@ -578,11 +593,14 @@ cv::Point3f ObjectRecognition3d::calcPosition(const ObjectRecognition3d::DepthIm
 	assert(rect.width >= 0 &&
 		   rect.height >= 0);
 
+	cv::Rect2i rrect = rect2ImageCoords(depthImg, rect);
+	rrect = clampRect(depthImg, rrect);
+
 	// get array of depths for region of intererst.
-	int ymin = static_cast<int>(rect.y * depthImg.height());
-	int ymax = static_cast<int>((rect.y + rect.height) * depthImg.height());
-	int xmin = static_cast<int>(rect.x * depthImg.width());
-	int xmax = static_cast<int>((rect.x + rect.width) * depthImg.width());
+	int ymin = rrect.y;
+	int ymax = rrect.br().y;
+	int xmin = rrect.x;
+	int xmax = rrect.br().x;
 
 	// do not use full resolution since depth image is upscaled
 	// sample with a 100x100 grid
@@ -592,11 +610,11 @@ cv::Point3f ObjectRecognition3d::calcPosition(const ObjectRecognition3d::DepthIm
 
 	// do not always allocat and reserve memory
 	m_calcPositionBuffer.clear();
-	for(int y = ymin; y < ymax; y+=yStep) {
-		for(int x = xmin; x < xmax; x+=xStep) {
-			float depth = depthImg(x, y);
+	for(int r = ymin; r < ymax; r+=yStep) {
+		for(int c = xmin; c < xmax; c+=xStep) {
+			float depth = depthImg(c, r);
 			if(std::isfinite(depth) && depth > 0)
-				m_calcPositionBuffer.push_back({x, y, depth});
+				m_calcPositionBuffer.push_back({c, r, depth});
 		}
 	}
 
@@ -617,12 +635,13 @@ cv::Point3f ObjectRecognition3d::calcPosition(const ObjectRecognition3d::DepthIm
 	for(size_t i = q1; i < q3; ++i) {
 		int r, c;
 		float depth;
-		std::tie(r, c, depth) = m_calcPositionBuffer[i];
+		std::tie(c, r, depth) = m_calcPositionBuffer[i];
 		const auto pInWorldCoords = getXYZ(r, c, depth,
 										   cx, cy, fracfx, fracfy);
 		assert(std::isfinite(pInWorldCoords.x) &&
 			   std::isfinite(pInWorldCoords.y) &&
 			   std::isfinite(pInWorldCoords.z));
+		m_currentRGBMarked(c,r) = RGBImgType::Pixel(255, 255, 0);
 		center += pInWorldCoords;
 	}
 	center /= float(q3 - q1);
