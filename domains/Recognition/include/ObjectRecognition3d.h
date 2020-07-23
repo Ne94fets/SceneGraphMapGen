@@ -159,7 +159,7 @@ private:
 
 	volatile bool	m_shutdown = false;
 
-	float	m_overlappingThreshold = 0.8f;
+	float	m_overlappingThreshold = 0.5f;
 	float	m_confidenceThreshold = 0.5f;
 
 	Channel<RGBImgType>				m_channelRGBMarked;
