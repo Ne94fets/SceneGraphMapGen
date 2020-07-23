@@ -157,7 +157,8 @@ private:
 		WAITING
 	};
 
-	bool	m_shutdown = false;
+	volatile bool	m_shutdown = false;
+
 	float	m_overlappingThreshold = 0.8f;
 	float	m_confidenceThreshold = 0.5f;
 
