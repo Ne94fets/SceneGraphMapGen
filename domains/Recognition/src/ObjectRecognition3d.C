@@ -155,10 +155,7 @@ void ObjectRecognition3d::onNewRGBImage(
 		std::cout << "Missing color image " << prevNumber+1 << " til " << image->sequenceID << std::endl;
 	}
 	prevNumber = image->sequenceID;
-	{
-		std::lock_guard<std::mutex> rgbMutex(m_rgbMutex);
-		m_rgbQueue.push(image);
-	}
+	m_rgbdQueue.push(image);
 }
 
 void ObjectRecognition3d::onNewDepthImage(
@@ -168,11 +165,7 @@ void ObjectRecognition3d::onNewDepthImage(
 		std::cout << "Missing depth image " << prevNumber+1 << " til " << image->sequenceID << std::endl;
 	}
 	prevNumber = image->sequenceID;
-
-	{
-		std::lock_guard<std::mutex> depthMutex(m_depthMutex);
-		m_depthQueue.push(image);
-	}
+	m_rgbdQueue.push(image);
 }
 
 void ObjectRecognition3d::process() {
@@ -181,7 +174,7 @@ void ObjectRecognition3d::process() {
 		auto startTime = std::chrono::system_clock::now();
 
 		// sync queues and get a matching pair
-		const auto optionalPair = getSyncedPair();
+		const auto optionalPair = m_rgbdQueue.getNewestSyncedPair();
 		if(!optionalPair) {
 			std::this_thread::sleep_for(std::chrono::milliseconds(1));
 			continue;
@@ -235,48 +228,6 @@ void ObjectRecognition3d::backgroundProcess() {
 
 		m_bgStatus = BackgroundStatus::DONE;
 	}
-}
-
-std::optional<ObjectRecognition3d::ChannelReadPair> ObjectRecognition3d::getSyncedPair() {
-	std::optional<ChannelReadPair> pair;
-
-	// get frame number of front image
-	{
-		std::lock_guard rgbGuard(m_rgbMutex);
-		std::lock_guard depthGuard(m_depthMutex);
-		if(m_depthQueue.empty() || m_rgbQueue.empty()) {
-			return {};
-		}
-
-		bool skipping = false;
-
-		while(m_rgbQueue.size() > 1 && m_depthQueue.size() > 1) {
-			// pop rgb images before next depth image
-			while(!m_rgbQueue.empty() && m_rgbQueue.front()->sequenceID < m_depthQueue.front()->sequenceID) {
-				std::cout << "No matching depth image. Dropping RGB image. FrameNumber: " << m_rgbQueue.front()->sequenceID << std::endl;
-				m_rgbQueue.pop();
-			}
-			// pop depth images before next rgb image
-			while(!m_depthQueue.empty() && m_depthQueue.front()->sequenceID < m_rgbQueue.front()->sequenceID) {
-				std::cout << "No matching rgb image. Dropping depth image. FrameNumber: " << m_depthQueue.front()->sequenceID << std::endl;
-				m_depthQueue.pop();
-			}
-
-			pair = std::make_pair(m_rgbQueue.front(), m_depthQueue.front());
-
-			// rgb and depth image should be synchronized and have same frame number now
-			assert(pair->first->sequenceID == pair->second->sequenceID);
-
-			m_rgbQueue.pop();
-			m_depthQueue.pop();
-			if(skipping) {
-				std::cout << "Skipping frames: " << pair->first->sequenceID << std::endl;
-			}
-			skipping = true;
-		}
-	}
-
-	return pair;
 }
 
 void ObjectRecognition3d::processPair(const ChannelReadPair& pair) {

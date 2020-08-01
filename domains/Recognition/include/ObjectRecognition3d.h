@@ -58,6 +58,7 @@
 
 #include <recognitiondatatypes/Detection.h>
 #include <kinectdatatypes/Types.h>
+#include <kinectdatatypes/RGBDQueue.h>
 
 #include <opencv2/tracking.hpp>
 #include <opencv2/tracking/tracker.hpp>
@@ -118,8 +119,6 @@ private:
 	void process();
 	void backgroundProcess();
 
-	std::optional<ChannelReadPair> getSyncedPair();
-
 	void processPair(const ChannelReadPair& pair);
 	void startDetection(const ChannelRead<RGBImgType>& rgbImage);
 	void trackLastDetections(const Stamped<RGBImgType>& rgbImage,
@@ -168,8 +167,7 @@ private:
 	Channel<RGBImgType>				m_channelRGBMarked;
 	Channel<DetectionContainer>		m_channelDetections;
 
-	std::queue<ChannelRead<DepthImgType>>	m_depthQueue;
-	std::queue<ChannelRead<RGBImgType>>		m_rgbQueue;
+	kinectdatatypes::RGBDQueue		m_rgbdQueue;
 
 	tf::Session*	m_session = nullptr;
 
@@ -177,8 +175,6 @@ private:
 	bool				m_hasRegData = false;
 
 	std::mutex	m_processingMutex;
-	std::mutex	m_depthMutex;
-	std::mutex	m_rgbMutex;
 
 	std::thread*	m_trackThread = nullptr;
 	std::thread*	m_bgThread = nullptr;

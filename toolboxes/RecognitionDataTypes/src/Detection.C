@@ -28,7 +28,7 @@ std::string Detection::getTypeName(int type) {
 	return iter->second;
 }
 
-std::map<int, std::string> Detection::m_lookupMap = {
+std::unordered_map<int, std::string> Detection::m_lookupMap = {
 	{1,	"person"},
 	{2,	"bicycle"},
 	{3,	"car"},

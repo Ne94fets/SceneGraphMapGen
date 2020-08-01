@@ -20,9 +20,15 @@ MIRA_ADD_LIBRARY(KinectDataTypes
 		include/kinectdatatypes/KinectDataTypesExports.h
 		include/kinectdatatypes/Types.h
 		src/Types.C
+		include/kinectdatatypes/RGBDQueue.h
+		src/RGBDQueue.C
 
 	LINK_LIBS
 		MIRABase
 		MIRAFramework
 		libfreenect2.so
 )
+
+set_target_properties(KinectDataTypes PROPERTIES
+	CXX_STANDARD 17
+	CXX_EXTENSIONS OFF)

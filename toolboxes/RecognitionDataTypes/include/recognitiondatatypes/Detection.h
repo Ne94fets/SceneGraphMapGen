@@ -3,7 +3,7 @@
 
 #include "RecognitionDataTypesExports.h"
 
-#include <map>
+#include <unordered_map>
 
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/random_generator.hpp>
@@ -51,7 +51,7 @@ public:
 	boost::uuids::uuid	uuid;
 
 private:
-	static std::map<int, std::string> m_lookupMap;
+	static std::unordered_map<int, std::string> m_lookupMap;
 };
 
 class MIRA_RECOGNITIONDATATYPES_EXPORT DetectionContainer
