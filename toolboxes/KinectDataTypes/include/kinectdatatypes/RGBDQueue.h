@@ -8,7 +8,7 @@
 #include <mutex>
 #include <queue>
 
-#include <fw/MicroUnit.h>
+#include <fw/ChannelReadWrite.h>
 #include <image/Img.h>
 
 using namespace mira;
