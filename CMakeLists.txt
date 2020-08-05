@@ -383,7 +383,7 @@ if(NOT EXISTS "${PCL_DIR}")
     file(MAKE_DIRECTORY "${PCL_DIR}/build")
     message(STATUS "Configure ${PCL_NAME}")
     execute_process(
-        COMMAND cmake -DCMAKE_BUILD_TYPE=Release ..
+		COMMAND cmake -DCMAKE_BUILD_TYPE=Release ..
         WORKING_DIRECTORY ${PCL_DIR}/build
         ERROR_VARIABLE EXEC_ERR)
     if(${RESULT_VARIABLE})
@@ -409,6 +409,8 @@ endif()
 
 INCLUDE_DIRECTORIES("${PCL_DIR}/usr/local/include/pcl-1.11")
 LINK_DIRECTORIES("${PCL_DIR}/usr/local/lib")
+find_package(VTK REQUIRED)
+INCLUDE_DIRECTORIES("/usr/include/vtk-8.2")
 
 set(CMAKE_MODULE_PATH "${CMAKE_MODULE_PATH};${PCL_DIR}/usr/local/share/pcl-1.11/Modules")
 find_package("FLANN" REQUIRED)

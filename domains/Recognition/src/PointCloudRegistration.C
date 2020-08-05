@@ -53,6 +53,7 @@
 #include <pcl/point_cloud.h>
 
 #include <pcl/memory.h>
+#include <pcl/common/distances.h>
 
 #include <pcl/filters/voxel_grid.h>
 #include <pcl/filters/filter.h>
@@ -60,6 +61,15 @@
 #include <pcl/registration/icp.h>
 #include <pcl/registration/icp_nl.h>
 #include <pcl/registration/transforms.h>
+
+#include <pcl/visualization/pcl_visualizer.h>
+using pcl::visualization::PointCloudColorHandlerGenericField;
+using pcl::visualization::PointCloudColorHandlerCustom;
+
+//our visualizer
+pcl::visualization::PCLVisualizer *p;
+//its left and right viewports
+int vp_1, vp_2;
 
 #include <opencv2/features2d.hpp>
 
@@ -92,6 +102,9 @@ public:
 
 	typedef std::pair<ChannelRead<RGBImgType>, ChannelRead<DepthImgType>>	ChannelReadPair;
 
+	typedef cv::ORB			FeatureDetectorType;
+	typedef cv::BFMatcher	FeatureMatcherType;
+
 public:
 
 	PointCloudRegistration();
@@ -103,7 +116,10 @@ public:
 		MIRA_REFLECT_BASE(r, MicroUnit);
 
 		// TODO: reflect all parameters (members and properties) that specify the persistent state of the unit
-		//r.property("Param1", mParam1, "First parameter of this unit with default value", 123.4f);
+		r.property("MaxIterations", m_maxIterations, "Maximum pcl align iterations", 60);
+//		r.property("TransformEps", m_transformEps, "Max allowable translation squared between two consecutive transforms", 1e-6);
+//		r.property("EuclideanFitnessEps", m_euclidianFitnessEps, "Max allowable eucledian transform between two consecutive transforms", 1e-6);
+		r.property("MaxCorrespondenceDist", m_maxCorrespndenceDist, "Max distance between two correspondences", 0.1);
 		//r.member("Param2", mParam2, setter(&PointCloudRegistration::setParam2,this), "Second parameter with setter");
 
 		// TODO: reflect all methods if this is a service providing RPCs
@@ -127,12 +143,22 @@ private:
 
 	// void setPose(const Pose2& pose);
 
-	void pairAlignSrc2Target(const PointCloudType::Ptr cloud_src,
+	bool pairAlignSrc2Target(const PointCloudType::Ptr cloud_src,
 			const PointCloudType::Ptr cloud_tgt,
-			Eigen::Matrix4f& target2Src,
-			bool downsample = false);
+			Eigen::Matrix4f& src2target,
+			bool downsample = false,
+			const Eigen::Matrix4f* guess = nullptr);
+
+	bool alignSrc2TargetRANSAC(const ChannelReadPair& pair,
+							   Eigen::Matrix4f& src2target);
 
 	PointCloudType::Ptr pair2Cloud(const ChannelReadPair& pair);
+	PointCloudType::Ptr pair2CloudDepth(const ChannelReadPair& pair);
+	bool getPoint(const cv::KeyPoint& kp, const DepthImgType& img, PointType& cloudPoint);
+	bool getVaildPoint(int c, int r,
+					   int roiWidth, int roiHeight,
+					   const DepthImgType& img,
+					   PointType& cloudPoint);
 	bool getXYZ(int r, int c, float depth, PointType& out);
 
 private:
@@ -144,45 +170,36 @@ private:
 
 	kinectdatatypes::RGBDQueue	m_rgbdQueue;
 
-	cv::Ptr<cv::FastFeatureDetector>	m_fastDetector;
-	PointCloudType::Ptr					m_lastCloud;
+	cv::Ptr<FeatureDetectorType>	m_featureDetector;
+	cv::Ptr<FeatureMatcherType>		m_featureMatcher;
+	std::vector<cv::KeyPoint>		m_features;
+	cv::Mat							m_descriptors;
+	PointCloudType::Ptr				m_keyPoints3D;
+
+	PointCloudType::Ptr				m_mapCloud;
+	double							m_lastMapUpdateZRot;
+	Eigen::Vector3f					m_lastMapUpdatePos;
+	bool							m_lastConverged = false;
+	int								m_maxIterations = 60;
+	double							m_transformEps = 1e-8;
+	double							m_euclidianFitnessEps = 1;
+	double							m_maxCorrespndenceDist = 0.1;
 
 	std::thread*	m_thread = nullptr;
 
-	TransformType		m_globalTransform = TransformType::Identity();
+	TransformType	m_globalTransform = TransformType::Identity();
 
 	Channel<TransformType>	m_channelGlobalTransfrom;
 	Channel<TransformType>	m_channelLocalTransform;
+//	Channel<PointCloud<Eigen::Vector3f>	m_channelPointCloud;
 };
-
-// Define a new point representation for < x, y, z >
-//class PointRep : public pcl::PointRepresentation<Eigen::Vector3f> {
-//  using pcl::PointRepresentation<Eigen::Vector3f>::nr_dimensions_;
-
-//public:
-//	PointRep();
-
-//	// Override the copyToFloatArray method to define our feature vector
-//	virtual void copyToFloatArray (const Eigen::Vector3f& p, float* out) const;
-//};
-
-//PointRep::PointRep() {
-//	// Define the number of dimensions
-//	nr_dimensions_ = 3;
-//}
-
-//void PointRep::copyToFloatArray(const Eigen::Vector3f& p, float* out) const {
-//	// < x, y, z >
-//	out[0] = p.x();
-//	out[1] = p.y();
-//	out[2] = p.z();
-//}
 
 ///////////////////////////////////////////////////////////////////////////////
 
 PointCloudRegistration::PointCloudRegistration() {
 	// TODO: further initialization of members, etc.
-	m_fastDetector = cv::FastFeatureDetector::create();
+	m_featureDetector = FeatureDetectorType::create();
+	m_featureMatcher = FeatureMatcherType::create(cv::NormTypes::NORM_HAMMING, true);
 }
 
 PointCloudRegistration::~PointCloudRegistration() {
@@ -203,7 +220,11 @@ void PointCloudRegistration::initialize() {
 
 	subscribe<KinectRegistrationData>("KinectRegData", &PointCloudRegistration::onKinectRegistrationData);
 	subscribe<RGBImgType>("RGBImageFull", &PointCloudRegistration::onRGBImage);
-	subscribe<DepthImgType>("DepthImage", &PointCloudRegistration::onDepthImage);
+	subscribe<DepthImgType>("DepthImageFull", &PointCloudRegistration::onDepthImage);
+
+	// Create a PCLVisualizer object
+	p = new pcl::visualization::PCLVisualizer ("Pairwise Incremental Registration");
+	p->createViewPort (0.0, 0, 1.0, 1.0, vp_2);
 
 	if(!m_thread) {
 		m_thread = new std::thread([this](){ process(); });
@@ -214,10 +235,6 @@ void PointCloudRegistration::onKinectRegistrationData(ChannelRead<KinectRegistra
 	if(m_hasKinectRegData)
 		return;
 
-//	m_cx = data->depth_p.cx;
-//	m_cy = data->depth_p.cy;
-//	m_fx = 1 / data->depth_p.fx;
-//	m_fy = 1 / data->depth_p.fy;
 	m_cx = data->rgb_p.cx;
 	m_cy = data->rgb_p.cy;
 	m_fx = 1 / data->rgb_p.fx;
@@ -268,44 +285,112 @@ void PointCloudRegistration::process() {
 }
 
 void PointCloudRegistration::processPair(const ChannelReadPair& pair) {
-	if(!m_lastCloud) {
-		m_lastCloud = pair2Cloud(pair);
+	if(!m_mapCloud) {
+		m_mapCloud = pair2Cloud(pair);
+		m_lastMapUpdatePos = Eigen::Vector3f(0,0,0);
+		m_lastMapUpdateZRot = 0;
+
+		Eigen::Vector4f currentPos = m_globalTransform * Eigen::Vector4f(0,0,0,1);
+		Eigen::Vector4f view = m_globalTransform * Eigen::Vector4f(0,1,0,1);
+		Eigen::Vector4f up = m_globalTransform * Eigen::Vector4f(0,0,1,1);
+		p->setCameraPosition(currentPos.x(), currentPos.y(), currentPos.z(),
+							 view.x(), view.y(), view.z(),
+							 up.x(), up.y(), up.z(), vp_2);
+		p->setCameraFieldOfView(90.f/180.f*M_PI, vp_2);
+
+		PointCloudColorHandlerCustom<PointXYZ> cloud_tgt_h (m_mapCloud, 0, 255, 0);
+		p->addPointCloud(m_mapCloud, cloud_tgt_h, "target", vp_2);
+
+		PCL_INFO ("Press q to continue the registration.\n");
+		p->spinOnce(10);
 		return;
 	}
 
-	Eigen::Matrix4f transform;
-	auto newCloud = pair2Cloud(pair);
+	Eigen::Matrix4f source2targetTransform;
+	PointCloudType::Ptr newCloud;
+
 	auto startTime = std::chrono::system_clock::now();
-	pairAlignSrc2Target(newCloud, m_lastCloud, transform, false);
+	bool converged = true;
+	if(alignSrc2TargetRANSAC(pair, source2targetTransform)) {
+		newCloud = m_keyPoints3D;
+	} else {
+		// if fast is not possible try to recover
+		newCloud = pair2Cloud(pair);
+		converged = pairAlignSrc2Target(
+					newCloud,
+					m_mapCloud,
+					source2targetTransform,
+					false,
+					m_lastConverged ? &m_globalTransform : nullptr);
+		if(converged) {
+			m_keyPoints3D = newCloud;
+		}
+	}
 	auto endTime = std::chrono::system_clock::now();
 	auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime-startTime).count();
-	std::cout << "PCL align took: " << duration << "ms" << std::endl;
+	std::cout << "PCL align took: " << duration << "ms result: " << converged << std::endl;
+
+	if(!converged) {
+		m_lastConverged = false;
+		return;
+	}
+
+	m_lastConverged = true;
 
 	// get current time
 	auto timestamp = Time::now();
 
 	// publish local transfrom
-	m_channelLocalTransform.post(Stamped<TransformType>(transform, timestamp, pair.first->sequenceID));
+	m_channelLocalTransform.post(Stamped<TransformType>(source2targetTransform, timestamp, pair.first->sequenceID));
 
 	// accumulate transform
-	m_globalTransform = transform * m_globalTransform;
+	m_globalTransform = source2targetTransform;
 	m_channelGlobalTransfrom.post(Stamped<TransformType>(m_globalTransform, timestamp, pair.first->sequenceID));
 
-	m_lastCloud = newCloud;
+	Eigen::Vector3f currentPos = m_globalTransform.topRightCorner(3, 1);
+	Eigen::Vector3f xAxisDir = m_globalTransform.topLeftCorner(3, 1);
+	double zRot = std::atan2(xAxisDir.y(), xAxisDir.x());
+	std::cout << "Pcl rotation: " << zRot/M_PI*180 << std::endl;
+
+	if((currentPos - m_lastMapUpdatePos).norm() > 1 || std::abs(zRot - m_lastMapUpdateZRot) > M_PI/20) {
+		*m_mapCloud += *newCloud;
+		m_lastMapUpdatePos = currentPos;
+		m_lastMapUpdateZRot = zRot;
+		std::cout << "Pcl update cloud" << std::endl;
+
+		p->removePointCloud ("source");
+		p->removePointCloud ("target");
+
+		PointCloudColorHandlerCustom<PointXYZ> cloud_tgt_h (m_mapCloud, 0, 255, 0);
+		PointCloudColorHandlerCustom<PointXYZ> cloud_src_h (newCloud, 255, 0, 0);
+		p->addPointCloud(m_mapCloud, cloud_tgt_h, "target", vp_2);
+		p->addPointCloud(newCloud, cloud_src_h, "source", vp_2);
+
+		Eigen::Vector4f currentPos = m_globalTransform * Eigen::Vector4f(0,0,0,1);
+		Eigen::Vector4f view = m_globalTransform * Eigen::Vector4f(0,1,0,1);
+		Eigen::Vector4f up = m_globalTransform * Eigen::Vector4f(0,0,1,1);
+		p->setCameraPosition(currentPos.x(), currentPos.y(), currentPos.z(),
+							 view.x(), view.y(), view.z(),
+							 up.x(), up.y(), up.z(), vp_2);
+
+		PCL_INFO ("Press q to continue the registration.\n");
+		p->spinOnce(10);
+	}
 }
 
-void PointCloudRegistration::pairAlignSrc2Target(
+bool PointCloudRegistration::pairAlignSrc2Target(
 		const PointCloudType::Ptr cloud_src,
 		const PointCloudType::Ptr cloud_tgt,
-		Eigen::Matrix4f& target2Src,
-		bool downsample) {
+		Eigen::Matrix4f& src2target,
+		bool downsample,
+		const Eigen::Matrix4f* guess) {
 	//
 	// Downsample for consistency and speed
 	// \note enable this for large datasets
 	PointCloudType::Ptr src;
 	PointCloudType::Ptr tgt;
-	pcl::VoxelGrid<PointType> grid;
 	if (downsample) {
+		pcl::VoxelGrid<PointType> grid;
 		src = std::make_shared<PointCloudType>();
 		grid.setLeafSize(0.05, 0.05, 0.05);
 		grid.setInputCloud(cloud_src);
@@ -322,17 +407,13 @@ void PointCloudRegistration::pairAlignSrc2Target(
 	//
 	// Align
 	pcl::IterativeClosestPointNonLinear<PointType, PointType> reg;
-	reg.setTransformationEpsilon (1e-6);
+	reg.setMaximumIterations(m_maxIterations);
+	reg.setTransformationEpsilon (m_transformEps);
+	reg.setEuclideanFitnessEpsilon(m_euclidianFitnessEps);
 
 	// Set the maximum distance between two correspondences (src<->tgt) to 10cm
 	// Note: adjust this based on the size of your datasets
-	reg.setMaxCorrespondenceDistance (0.1);
-
-	// Set the point representation
-//	PointRep rep;
-//	float rescale[3] = {1.0, 1.0, 1.0};
-//	rep.setRescaleValues(rescale);
-//	reg.setPointRepresentation(pcl::make_shared<const PointRep>(rep));
+	reg.setMaxCorrespondenceDistance (m_maxCorrespndenceDist);
 
 	// input data set
 	reg.setInputSource(src);
@@ -340,54 +421,257 @@ void PointCloudRegistration::pairAlignSrc2Target(
 	// cloud that we want to align the input source to
 	reg.setInputTarget(tgt);
 
-	reg.setMaximumIterations(60);
-	reg.align(*src);
+	if(guess) {
+		reg.align(*src, *guess);
+	} else {
+		reg.align(*src);
+	}
 
-	target2Src = reg.getFinalTransformation().inverse();
+	src2target = reg.getFinalTransformation();
+
+	auto state = reg.getConvergeCriteria()->getConvergenceState();
+	std::cout << "PCL Reg: FitScore: " << reg.getFitnessScore();
+	switch (state) {
+	case pcl::registration::DefaultConvergenceCriteria<float>::ConvergenceState::CONVERGENCE_CRITERIA_ITERATIONS:
+		std::cout << "Reason: Iterations" << std::endl;
+		break;
+	case pcl::registration::DefaultConvergenceCriteria<float>::ConvergenceState::CONVERGENCE_CRITERIA_TRANSFORM:
+		std::cout << "Reason: Transform" << std::endl;
+		break;
+	case pcl::registration::DefaultConvergenceCriteria<float>::ConvergenceState::CONVERGENCE_CRITERIA_ABS_MSE:
+		std::cout << "Reason: ABS_MSE" << std::endl;
+		break;
+	case pcl::registration::DefaultConvergenceCriteria<float>::ConvergenceState::CONVERGENCE_CRITERIA_FAILURE_AFTER_MAX_ITERATIONS:
+		std::cout << "Reason: Fail after max iterations" << std::endl;
+		break;
+	case pcl::registration::DefaultConvergenceCriteria<float>::ConvergenceState::CONVERGENCE_CRITERIA_NO_CORRESPONDENCES:
+		std::cout << "Reason: No correspondences" << std::endl;
+		break;
+	default:
+		break;
+	}
+
+	return reg.hasConverged();
 }
 
-PointCloudRegistration::PointCloudType::Ptr PointCloudRegistration::pair2Cloud(const ChannelReadPair& pair) {
-	std::vector<cv::KeyPoint> keyPoints;
-	m_fastDetector->detect(pair.first->getMat(), keyPoints);
+bool PointCloudRegistration::alignSrc2TargetRANSAC(const ChannelReadPair& pair,
+												   Eigen::Matrix4f& src2target) {
+	// cannot do RANSAC if there were no features in the previous run
+	if(!m_keyPoints3D) {
+		return false;
+	}
 
-	const int roiWidth = 3;
-	const int roiHeight = 3;
+	std::vector<cv::KeyPoint> features;
+	m_featureDetector->detect(pair.first->getMat(), features);
 
-	std::cout << "PCL Features: " << keyPoints.size() << std::endl;
+	const int maxPoints = 300;
+	cv::KeyPointsFilter::retainBest(features, maxPoints);
 
-	PointCloudType::Ptr newCloud = std::make_shared<PointCloudType>();
-	newCloud->reserve(keyPoints.size() * roiWidth * roiHeight);
+	if(features.size() < maxPoints) {
+		std::cout << "PCL Features: " << features.size() << "/" << maxPoints << std::endl;
+	}
 
-	const int rows = pair.second->getMat().rows;
-	const int cols = pair.second->getMat().cols;
-	const float* data = reinterpret_cast<const float*>(pair.second->data());
+	PointCloudType::Ptr keyPoints3D = std::make_shared<PointCloudType>();
+	keyPoints3D->reserve(features.size());
 
-	for(const auto& point : keyPoints) {
-		const auto& pt = point.pt;
-		// get top left point
-		int r = static_cast<int>(pt.y) - roiHeight/2;
-		int c = static_cast<int>(pt.x) - roiWidth/2;
+	// inplace replace invalid points with valid points
+	size_t validPointsCnt = 0;
 
-		if(r < 0 || r + roiHeight >= rows || c < 0 || c + roiWidth >= cols) {
-			continue;
+	PointType cloudPoint;
+	for(size_t i = 0; i < features.size(); ++i) {
+		const cv::KeyPoint& kp = features[i];
+		if(getPoint(kp, pair.second, cloudPoint)) {
+			keyPoints3D->push_back(cloudPoint);
+			features[validPointsCnt++] = kp;
+		}
+	}
+	// erase copied valid and invalid points
+	features.erase(features.begin() + validPointsCnt, features.end());
+
+	cv::Mat descriptors;
+	m_featureDetector->compute(pair.first->getMat(), features, descriptors);
+
+	std::vector<cv::DMatch> matches;
+	m_featureMatcher->match(descriptors, m_descriptors, matches);
+
+	// random sample a few matches get with best euclidian distance match
+	const size_t numSamples = 3;
+
+	if(matches.size() < numSamples) {
+		m_features.clear();
+		m_keyPoints3D = nullptr;
+		return false;
+	}
+
+	float minError = std::numeric_limits<float>::max();
+	PointCloudType::Ptr tmpCloud = std::make_shared<PointCloudType>();
+	for(size_t i = 0; i < 1000; ++i) {
+		// permutate matches
+		for(size_t j = 0; j < numSamples; ++j) {
+			size_t idx = j + (std::rand() % (matches.size() - j));
+			std::swap(matches[j], matches[idx]);
 		}
 
-		const float* depthVal = data + r * cols + c;
+		pcl::Correspondences corres;
+		for(size_t j = 0; j < numSamples; ++j) {
+			corres.push_back(pcl::Correspondence(matches[j].queryIdx, matches[j].trainIdx, matches[j].distance));
+		}
 
-		for(int j = 0; j < roiHeight; ++j) {
-			for(int i = 0; i < roiWidth; ++i) {
-				float depth = *depthVal;
-				PointType cloudPoint;
-				if(getXYZ(r + j, c + i, depth, cloudPoint)) {
-					newCloud->push_back(cloudPoint);
-				}
-				depthVal++;
-			}
-			depthVal += cols - roiWidth;
+		Eigen::Matrix4f tmpSrc2Tgt;
+		pcl::registration::TransformationEstimationSVD<PointType, PointType> estimator;
+		estimator.estimateRigidTransformation(*keyPoints3D, *m_keyPoints3D, corres, tmpSrc2Tgt);
+		pcl::transformPointCloud(*keyPoints3D, *tmpCloud, tmpSrc2Tgt);
+
+		float mse = 0;
+		for(size_t j = 0; j < matches.size(); ++j) {
+			const PointType& last = (*m_keyPoints3D)[matches[j].trainIdx];
+			const PointType& cur = (*tmpCloud)[matches[j].queryIdx];
+			mse += pcl::squaredEuclideanDistance(last, cur) / corres.size();
+		}
+
+		if(mse < minError) {
+			minError = mse;
+			src2target = tmpSrc2Tgt;
+			std::cout << "PCL MSE: " << mse << std::endl;
 		}
 	}
 
+	pcl::transformPointCloud(*keyPoints3D, *keyPoints3D, src2target);
+
+	std::cout << "PCL MSE: " << minError << std::endl;
+	if(minError > 5) {
+		m_features.clear();
+		m_keyPoints3D = nullptr;
+		return false;
+	}
+
+	m_features = features;
+	m_descriptors = descriptors;
+	m_keyPoints3D = keyPoints3D;
+
+	return true;
+}
+
+PointCloudRegistration::PointCloudType::Ptr PointCloudRegistration::pair2Cloud(const ChannelReadPair& pair) {
+	std::vector<cv::KeyPoint> features;
+	m_featureDetector->detect(pair.first->getMat(), features);
+
+	const int maxPoints = 500;
+	cv::KeyPointsFilter::retainBest(features, maxPoints);
+
+	if(features.size() < maxPoints) {
+		std::cout << "PCL Features: " << features.size() << "/" << maxPoints << std::endl;
+	}
+
+	PointCloudType::Ptr keyPoints3D = std::make_shared<PointCloudType>();
+	keyPoints3D->reserve(features.size());
+
+	// inplace replace invalid points with valid points
+	size_t validPointsCnt = 0;
+
+	PointType cloudPoint;
+	for(size_t i = 0; i < features.size(); ++i) {
+		const cv::KeyPoint& kp = features[i];
+		if(getPoint(kp, pair.second, cloudPoint)) {
+			keyPoints3D->push_back(cloudPoint);
+			features[validPointsCnt++] = kp;
+		}
+	}
+	// erase copied valid and invalid points
+	features.erase(features.begin() + validPointsCnt, features.end());
+
+	cv::Mat descriptors;
+	m_featureDetector->compute(pair.first->getMat(), features, descriptors);
+
+	m_features = features;
+	m_descriptors = descriptors;
+
+	return keyPoints3D;
+
+//	const int roiWidth = 3;
+//	const int roiHeight = 3;
+
+//	PointCloudType::Ptr newCloud = std::make_shared<PointCloudType>();
+//	newCloud->reserve(features.size() * roiWidth * roiHeight);
+
+//	const int rows = pair.second->getMat().rows;
+//	const int cols = pair.second->getMat().cols;
+
+//	for(const auto& point : features) {
+//		const auto& pt = point.pt;
+//		// get top left point
+//		int r = static_cast<int>(pt.y) - roiHeight/2;
+//		int c = static_cast<int>(pt.x) - roiWidth/2;
+
+//		if(r < 0 || r + roiHeight >= rows || c < 0 || c + roiWidth >= cols) {
+//			continue;
+//		}
+
+//		PointType cloudPoint;
+//		if(getVaildPoint(c, r, roiWidth, roiHeight, pair.second, cloudPoint)) {
+//			newCloud->push_back(cloudPoint);
+//		}
+//	}
+
+//	return newCloud;
+}
+
+PointCloudRegistration::PointCloudType::Ptr PointCloudRegistration::pair2CloudDepth(
+		const ChannelReadPair& pair) {
+	const int rows = pair.second->getMat().rows;
+	const int cols = pair.second->getMat().cols;
+
+	PointCloudType::Ptr newCloud = std::make_shared<PointCloudType>();
+	newCloud->reserve((rows-4)/2 * (cols-600)/2);
+
+	for(int r = 2; r < rows-2; r+=2) {
+		const float* lineData = (*pair.second)[r];
+		for(int c = 300; c < cols-300; c+=2) {
+			const float *depthValue = lineData + c;
+			PointType cloudPoint;
+			if(getXYZ(r, c, *depthValue, cloudPoint)) {
+				newCloud->push_back(cloudPoint);
+			}
+		}
+	}
 	return newCloud;
+}
+
+bool PointCloudRegistration::getPoint(const cv::KeyPoint& kp,
+									  const DepthImgType& img,
+									  PointType& cloudPoint) {
+	const int r = static_cast<int>(kp.pt.y);
+	const int c = static_cast<int>(kp.pt.x);
+
+	assert(0 <= c && c < img.width() &&
+		   0 <= r && r < img.height());
+
+	const float depth = *(img[r] + c);
+
+	return getXYZ(r, c, depth, cloudPoint);
+}
+
+bool PointCloudRegistration::getVaildPoint(int c, int r,
+										   int roiWidth, int roiHeight,
+										   const PointCloudRegistration::DepthImgType& img,
+										   PointType& cloudPoint) {
+	assert(0 <= c && c + roiWidth < img.width() &&
+		   0 <= r && r + roiHeight < img.height());
+
+	const float* depthVal = img[r] + c;
+
+	for(int j = 0; j < roiHeight; ++j) {
+		for(int i = 0; i < roiWidth; ++i) {
+			float depth = *depthVal;
+			if(getXYZ(r + j, c + i, depth, cloudPoint)) {
+				return true;
+			}
+			depthVal++;
+		}
+		depthVal += img.width() - roiWidth;
+	}
+
+	return false;
 }
 
 inline bool PointCloudRegistration::getXYZ(int r, int c, float depth, PointType& out) {
@@ -399,12 +683,12 @@ inline bool PointCloudRegistration::getXYZ(int r, int c, float depth, PointType&
 	if(!std::isfinite(depth) || depth_val <= 0.001f) {
 		//depth value is not valid
 		return false;
-	} else {
-		out.x = (c + 0.5f - m_cx) * m_fx * depth_val;
-		out.y = (r + 0.5f - m_cy) * m_fy * depth_val;
-		out.z = depth_val;
-		return true;
 	}
+
+	out.x = (c + 0.5f - m_cx) * m_fx * depth_val;
+	out.z = -(r + 0.5f - m_cy) * m_fy * depth_val;
+	out.y = depth_val;
+	return true;
 }
 
 //void PointCloudRegistration::onPoseChanged(ChannelRead<Pose2> data)
