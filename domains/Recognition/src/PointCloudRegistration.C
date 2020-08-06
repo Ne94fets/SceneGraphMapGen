@@ -61,6 +61,7 @@
 #include <pcl/registration/icp.h>
 #include <pcl/registration/icp_nl.h>
 #include <pcl/registration/transforms.h>
+#include <pcl/registration/transformation_estimation_3point.h>
 
 #include <pcl/visualization/pcl_visualizer.h>
 using pcl::visualization::PointCloudColorHandlerGenericField;
@@ -72,6 +73,7 @@ pcl::visualization::PCLVisualizer *p;
 int vp_1, vp_2;
 
 #include <opencv2/features2d.hpp>
+#include <opencv2/highgui.hpp>
 
 #include <kinectdatatypes/Types.h>
 #include <kinectdatatypes/RGBDQueue.h>
@@ -153,6 +155,10 @@ private:
 	PointCloudType::Ptr pair2Cloud(const ChannelReadPair& pair);
 	PointCloudType::Ptr pair2CloudDepth(const ChannelReadPair& pair);
 	bool getPoint(const cv::KeyPoint& kp, const DepthImgType& img, PointType& cloudPoint);
+	bool getNearestPoint(int c, int r,
+						 int roiWidth, int roiHeight,
+						 const DepthImgType& img,
+						 PointType& cloudPoint);
 	bool getVaildPoint(int c, int r,
 					   int roiWidth, int roiHeight,
 					   const DepthImgType& img,
@@ -320,7 +326,6 @@ void PointCloudRegistration::processPair(const ChannelReadPair& pair) {
 					source2targetTransform,
 					resultCloud,
 					&m_cloudHistory[i].second);
-
 		if(converged) {
 //			source2targetTransform = m_cloudHistory[i].second * source2targetTransform;
 			break;
@@ -413,10 +418,10 @@ bool PointCloudRegistration::pairAlignSrc2Target(
 	reg.setMaxCorrespondenceDistance (m_maxCorrespndenceDist);
 
 	// input data set
-	reg.setInputSource(src);
+	reg.setInputSource(cloud_src);
 
 	// cloud that we want to align the input source to
-	reg.setInputTarget(tgt);
+	reg.setInputTarget(cloud_tgt);
 
 	if(guess) {
 		reg.align(*result, *guess);
@@ -471,7 +476,7 @@ PointCloudRegistration::PointCloudType::Ptr PointCloudRegistration::pair2Cloud(c
 	PointType cloudPoint;
 	for(size_t i = 0; i < features.size(); ++i) {
 		const cv::KeyPoint& kp = features[i];
-		if(getPoint(kp, pair.second, cloudPoint)) {
+		if(getNearestPoint(kp.pt.x, kp.pt.y, 3, 3, pair.second, cloudPoint)) {
 			keyPoints3D->push_back(cloudPoint);
 			features[validPointsCnt++] = kp;
 		}
@@ -544,6 +549,33 @@ bool PointCloudRegistration::getPoint(const cv::KeyPoint& kp,
 	return getXYZ(r, c, depth, cloudPoint);
 }
 
+bool PointCloudRegistration::getNearestPoint(int c, int r,
+											 int roiWidth, int roiHeight,
+											 const DepthImgType& img,
+											 PointType& cloudPoint) {
+	assert(0 <= c && c + roiWidth < img.width() &&
+		   0 <= r && r + roiHeight < img.height());
+
+	const float* depthVal = img[r] + c;
+
+	float nearest = std::numeric_limits<float>::infinity();
+	int row, col;
+	for(int j = 0; j < roiHeight; ++j) {
+		for(int i = 0; i < roiWidth; ++i) {
+			float depth = *depthVal;
+			if(depth < nearest) {
+				nearest = depth;
+				row = r + j;
+				col = c + i;
+			}
+			depthVal++;
+		}
+		depthVal += img.width() - roiWidth;
+	}
+
+	return getXYZ(row, col, nearest, cloudPoint);
+}
+
 bool PointCloudRegistration::getVaildPoint(int c, int r,
 										   int roiWidth, int roiHeight,
 										   const PointCloudRegistration::DepthImgType& img,
@@ -581,6 +613,10 @@ inline bool PointCloudRegistration::getXYZ(int r, int c, float depth, PointType&
 	out.x = (c + 0.5f - m_cx) * m_fx * depth_val;
 	out.z = -(r + 0.5f - m_cy) * m_fy * depth_val;
 	out.y = depth_val;
+
+	assert(std::isfinite(out.x) &&
+		   std::isfinite(out.y) &&
+		   std::isfinite(out.z));
 	return true;
 }
 
