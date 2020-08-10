@@ -28,7 +28,6 @@ MIRA_ADD_LIBRARY(ObjectRecognition3d
 		MIRAFramework
 		opencv_core
 		opencv_tracking
-		opencv_dnn_objdetect
 		tensorflow_cc
 		RecognitionDataTypes
 		KinectDataTypes
@@ -51,12 +50,14 @@ MIRA_ADD_LIBRARY(PointCloudRegistration
 		MIRAFramework
         KinectDataTypes
 		opencv_features2d
+		opencv_highgui
         pcl_common
         pcl_kdtree
 		pcl_features
 		pcl_filters
 		pcl_registration
 		pcl_sample_consensus
+		pcl_visualization
 )
 
 set_target_properties(PointCloudRegistration PROPERTIES

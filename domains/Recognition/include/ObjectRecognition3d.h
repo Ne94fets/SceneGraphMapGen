@@ -92,8 +92,10 @@ public:
 	typedef recognitiondatatypes::Detection				Detection;
 	typedef recognitiondatatypes::DetectionContainer	DetectionContainer;
 
-	typedef std::pair<ChannelRead<RGBImgType>, ChannelRead<DepthImgType>>	ChannelReadPair;
-	typedef std::tuple<int, int, float>										ImgDepthPoint;
+	typedef kinectdatatypes::RGBDQueue<Stamped<RGBImgType>, Stamped<DepthImgType>>	SyncQueueType;
+	typedef typename SyncQueueType::ChannelPair										ChannelPair;
+
+	typedef std::tuple<int, int, float>	ImgDepthPoint;
 
 public:
 	ObjectRecognition3d();
@@ -119,8 +121,8 @@ private:
 	void process();
 	void backgroundProcess();
 
-	void processPair(const ChannelReadPair& pair);
-	void startDetection(const ChannelRead<RGBImgType>& rgbImage);
+	void processPair(const ChannelPair& pair);
+	void startDetection(const Stamped<RGBImgType>& rgbImage);
 	void trackLastDetections(const Stamped<RGBImgType>& rgbImage,
 							 const Stamped<DepthImgType>& depthImage);
 	void trackNewDetections(const Stamped<RGBImgType>& rgbImage,
@@ -167,7 +169,7 @@ private:
 	Channel<RGBImgType>				m_channelRGBMarked;
 	Channel<DetectionContainer>		m_channelDetections;
 
-	kinectdatatypes::RGBDQueue		m_rgbdQueue;
+	SyncQueueType	m_rgbdQueue;
 
 	tf::Session*	m_session = nullptr;
 
@@ -180,7 +182,7 @@ private:
 	std::thread*	m_bgThread = nullptr;
 
 	BackgroundStatus		m_bgStatus = BackgroundStatus::WAITING;
-	ChannelRead<RGBImgType>	m_detectionImage;
+	Stamped<RGBImgType>		m_detectionImage;
 	std::mutex				m_detectionImageMutex;
 
 	std::vector<ImgDepthPoint>			m_calcPositionBuffer;

@@ -155,7 +155,7 @@ void ObjectRecognition3d::onNewRGBImage(
 		std::cout << "Missing color image " << prevNumber+1 << " til " << image->sequenceID << std::endl;
 	}
 	prevNumber = image->sequenceID;
-	m_rgbdQueue.push(image);
+	m_rgbdQueue.push0(static_cast<Stamped<RGBImgType>>(image));
 }
 
 void ObjectRecognition3d::onNewDepthImage(
@@ -165,7 +165,7 @@ void ObjectRecognition3d::onNewDepthImage(
 		std::cout << "Missing depth image " << prevNumber+1 << " til " << image->sequenceID << std::endl;
 	}
 	prevNumber = image->sequenceID;
-	m_rgbdQueue.push(image);
+	m_rgbdQueue.push1(image);
 }
 
 void ObjectRecognition3d::process() {
@@ -230,11 +230,11 @@ void ObjectRecognition3d::backgroundProcess() {
 	}
 }
 
-void ObjectRecognition3d::processPair(const ChannelReadPair& pair) {
+void ObjectRecognition3d::processPair(const ChannelPair& pair) {
 	const Stamped<RGBImgType>& rgbImage = pair.first;
 	const Stamped<DepthImgType>& depthImage = pair.second;
 	Stamped<RGBImgType> rgbSmall;
-	rgbSmall.sequenceID = pair.first->sequenceID;
+	rgbSmall.sequenceID = pair.first.sequenceID;
 	cv::resize(rgbImage, rgbSmall, cv::Size(rgbImage.width()/4, rgbImage.height()/4));
 
 	rgbImage.getMat().copyTo(m_currentRGBMarked);
@@ -285,16 +285,16 @@ void ObjectRecognition3d::processPair(const ChannelReadPair& pair) {
 //												Time::now(),
 //												pair.first->sequenceID));
 	auto wRGBMarked = m_channelRGBMarked.write();
-	wRGBMarked->sequenceID = pair.first->sequenceID;
+	wRGBMarked->sequenceID = pair.first.sequenceID;
 	wRGBMarked->value() = m_currentRGBMarked.clone();
 
 	// post detections
 	auto wChannelDetections = m_channelDetections.write();
-	wChannelDetections->sequenceID = pair.first->sequenceID;
+	wChannelDetections->sequenceID = pair.first.sequenceID;
 	wChannelDetections->value() = m_detections;
 }
 
-void ObjectRecognition3d::startDetection(const ChannelRead<RGBImgType>& rgbImage) {
+void ObjectRecognition3d::startDetection(const Stamped<RGBImgType>& rgbImage) {
 	// only start if non is running
 	if(m_bgStatus == BackgroundStatus::WAITING) {
 		std::lock_guard<std::mutex> imageGuard(m_detectionImageMutex);
@@ -382,7 +382,7 @@ void ObjectRecognition3d::trackNewDetections(const Stamped<RGBImgType>& rgbImage
 			m_bgTrackers.push_back(cv::TrackerKCF::create());
 
 		cv::Mat resizedDetectionImage;
-		cv::resize(*m_detectionImage, resizedDetectionImage, rgbImage.size());
+		cv::resize(m_detectionImage, resizedDetectionImage, rgbImage.size());
 
 		std::vector<size_t> lostIndices;
 		lostIndices.reserve(m_bgDetections.size());
