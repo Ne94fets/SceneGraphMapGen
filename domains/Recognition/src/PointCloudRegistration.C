@@ -76,6 +76,7 @@ using pcl::visualization::PointCloudColorHandlerCustom;
 #include <kinectdatatypes/RGBDQueue.h>
 
 #define DEBUG_MATCHES 0
+#define DEBUG_POINT_CLOUD 0
 
 using namespace mira;
 using namespace pcl;
@@ -265,9 +266,11 @@ void PointCloudRegistration::initialize() {
 		m_thread = new std::thread([this](){ process(); });
 	}
 
+#if DEBUG_POINT_CLOUD
 	if(!m_visThread) {
 		m_visThread = new std::thread([this]() { visualize(); });
 	}
+#endif
 }
 
 void PointCloudRegistration::onKinectRegistrationData(ChannelRead<KinectRegistrationData> data) {
@@ -388,6 +391,7 @@ void PointCloudRegistration::processPair(const ChannelPair& pair) {
 		m_history[0] = newEntry;
 		m_history.insert(m_history.begin() + m_historyStatic, newEntry);
 
+#if DEBUG_POINT_CLOUD
 		{
 			std::lock_guard guard(m_mapMutex);
 
@@ -396,6 +400,7 @@ void PointCloudRegistration::processPair(const ChannelPair& pair) {
 			m_fullCloud = pair2CloudDepthColor(pair);
 			m_update = true;
 		}
+#endif
 
 		m_lastMapUpdatePos = Eigen::Vector3f(0,0,0);
 		m_lastMapUpdateZRot = 0;
@@ -403,15 +408,15 @@ void PointCloudRegistration::processPair(const ChannelPair& pair) {
 	}
 
 	// align clouds
-	auto startTime = std::chrono::system_clock::now();
+//	auto startTime = std::chrono::system_clock::now();
 	Eigen::Matrix4f source2targetTransform;
 	HistoryEntry newEntry;
 	pair2Cloud(pair, newEntry);
-	auto endTime = std::chrono::system_clock::now();
-	auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime-startTime).count();
-	std::cout << "PCL pair2Cloud took: " << duration << "ms" << std::endl;
+//	auto endTime = std::chrono::system_clock::now();
+//	auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime-startTime).count();
+//	std::cout << "PCL pair2Cloud took: " << duration << "ms" << std::endl;
 
-	startTime = std::chrono::system_clock::now();
+//	startTime = std::chrono::system_clock::now();
 	bool converged = false;
 	size_t maxInliers = 0;
 	for(size_t i = 0; i < m_historyStatic && !m_history[i].features.empty(); ++i) {
@@ -439,9 +444,9 @@ void PointCloudRegistration::processPair(const ChannelPair& pair) {
 		}
 	}
 
-	endTime = std::chrono::system_clock::now();
-	duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime-startTime).count();
-	std::cout << "PCL align took: " << duration << "ms result: " << converged << std::endl;
+//	endTime = std::chrono::system_clock::now();
+//	duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime-startTime).count();
+//	std::cout << "PCL align took: " << duration << "ms result: " << converged << std::endl;
 
 	// if not aligned return
 	if(!converged) {
@@ -472,7 +477,6 @@ void PointCloudRegistration::processPair(const ChannelPair& pair) {
 	Eigen::Vector3f currentPos = m_globalTransform.topRightCorner(3, 1);
 	Eigen::Vector3f xAxisDir = m_globalTransform.topLeftCorner(3, 1);
 	double zRot = std::atan2(xAxisDir.y(), xAxisDir.x());
-	std::cout << "Pcl rotation: " << zRot/M_PI*180 << std::endl;
 
 	// update global history after driving 0.5m or after rotating 9 degrees
 	const float updateDist = 0.5;
@@ -484,6 +488,7 @@ void PointCloudRegistration::processPair(const ChannelPair& pair) {
 		m_lastMapUpdatePos = currentPos;
 		m_lastMapUpdateZRot = zRot;
 
+#if DEBUG_POINT_CLOUD
 		{
 			std::lock_guard guard(m_mapMutex);
 
@@ -497,8 +502,9 @@ void PointCloudRegistration::processPair(const ChannelPair& pair) {
 
 			m_update = true;
 		}
+#endif
 
-		std::cout << "Pcl update cloud" << std::endl;
+		std::cout << "PCL update cloud" << std::endl;
 	}
 }
 
@@ -558,6 +564,8 @@ bool PointCloudRegistration::getTransformRANSAC(const HistoryEntry& newEntry,
 		return false;
 	}
 
+	pcl::registration::TransformationEstimation2D<PointType, PointType> estimator;
+
 	size_t maxInliers = 0;
 	// RANSAC draws = log(1 - z) / log(1 - w^n)
 	// z = 0.99, w = 0.5 (50% of matches are good), n = numSamples
@@ -598,7 +606,6 @@ bool PointCloudRegistration::getTransformRANSAC(const HistoryEntry& newEntry,
 		}
 
 		Eigen::Matrix4f tmpSrc2Tgt;
-		pcl::registration::TransformationEstimation2D<PointType, PointType> estimator;
 		estimator.estimateRigidTransformation(*newEntry.keyPoints3D, *entry.keyPoints3D, corres, tmpSrc2Tgt);
 
 
@@ -616,7 +623,6 @@ bool PointCloudRegistration::getTransformRANSAC(const HistoryEntry& newEntry,
 		if(inliersCnt > maxInliers) {
 			maxInliers = inliersCnt;
 			src2target = tmpSrc2Tgt;
-			std::cout << "PCL inliers: " << inliersCnt << "/" << matches.size() << std::endl;
 		}
 	}
 
