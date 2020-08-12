@@ -21,11 +21,12 @@ namespace recognitiondatatypes {
 class MIRA_RECOGNITIONDATATYPES_EXPORT Detection {
 public:
 	Detection();
-	Detection(size_t frameNumber,
-			  const cv::Rect2f& box,
+	Detection(const cv::Rect2f& box,
 			  int type,
 			  float confidence,
-			  const cv::Point3f pos);
+			  const cv::Point3f& pos,
+			  const cv::Point3f& bboxMin,
+			  const cv::Point3f& bboxMax);
 
 	static std::string getTypeName(int type);
 
@@ -43,11 +44,12 @@ public:
 	}
 
 public:
-	size_t				frameNumber;
 	cv::Rect2f			box;
 	int					type;
 	float				confidence;
 	cv::Point3f			pos;
+	cv::Point3f			bboxMin;
+	cv::Point3f			bboxMax;
 	boost::uuids::uuid	uuid;
 
 private:

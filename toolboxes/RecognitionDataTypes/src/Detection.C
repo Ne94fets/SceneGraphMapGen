@@ -7,16 +7,18 @@ Detection::Detection() {
 
 }
 
-Detection::Detection(size_t frameNumber,
-					 const cv::Rect2f& box,
+Detection::Detection(const cv::Rect2f& box,
 					 int type,
 					 float confidence,
-					 const cv::Point3f pos)
-	: frameNumber(frameNumber),
-	  box(box),
+					 const cv::Point3f& pos,
+					 const cv::Point3f& bboxMin,
+					 const cv::Point3f& bboxMax)
+	: box(box),
 	  type(type),
 	  confidence(confidence),
-	  pos(pos) {
+	  pos(pos),
+	  bboxMin(bboxMin),
+	  bboxMax(bboxMax) {
 
 }
 

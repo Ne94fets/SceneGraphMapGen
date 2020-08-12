@@ -127,19 +127,25 @@ private:
 							 const Stamped<DepthImgType>& depthImage);
 	void trackNewDetections(const Stamped<RGBImgType>& rgbImage,
 							const Stamped<DepthImgType>& depthImage);
-	void matchDetections();
+
 	void matchDetectionsIndependentGreedy(const cv::Mat& resizedDetectionImage);
 
-	cv::Point3f getXYZ(const int r, const int c, const float depth,
-					   const float cx, const float cy,
-					   const float fracfx, const float fracfy);
+	bool getXYZ(const int r, const int c, const float depth,
+				const float cx, const float cy,
+				const float fracfx, const float fracfy,
+				cv::Point3f& point);
 
-	int32_t				readNumDetections(const std::vector<tf::Tensor>& outputs);
-	cv::Rect2f			readDetectionRect(const std::vector<tf::Tensor>& outputs, int32_t idx);
-	float				readDetectionConfidence(const std::vector<tf::Tensor>& outputs, int32_t idx);
-	int					readDetectionType(const std::vector<tf::Tensor>& outputs, int32_t idx);
-	Detection			readDetection(const std::vector<tf::Tensor>& outputs, int32_t idx);
+	int32_t		readNumDetections(const std::vector<tf::Tensor>& outputs);
+	cv::Rect2f	readDetectionRect(const std::vector<tf::Tensor>& outputs, int32_t idx);
+	float		readDetectionConfidence(const std::vector<tf::Tensor>& outputs, int32_t idx);
+	int			readDetectionType(const std::vector<tf::Tensor>& outputs, int32_t idx);
+	Detection	readDetection(const std::vector<tf::Tensor>& outputs, int32_t idx);
+
+	void	updateDetection(Detection& toUpdate, const Detection& data);
+	void	updateDetectionBox(Detection& d, const DepthImgType& depth, const cv::Rect2f& box);
+
 	cv::Point3f			calcPosition(const DepthImgType& depthImg, const cv::Rect2f& rect);
+	void				calcBBox(Detection& d, const DepthImgType& depthImage, const cv::Rect2f& box);
 	cv::Rect2i			rect2ImageCoords(const Img<>& image, const cv::Rect2f& rect);
 	cv::Rect2f			normalizeRect(const Img<>& image, const cv::Rect2f& rect);
 	cv::Rect2d			clampRect(const Img<>& image, const cv::Rect2d& rect);
@@ -168,6 +174,8 @@ private:
 	RGBImgType						m_currentRGBMarked;
 	Channel<RGBImgType>				m_channelRGBMarked;
 	Channel<DetectionContainer>		m_channelDetections;
+	Channel<DetectionContainer>		m_channelNewDetections;
+	Channel<DetectionContainer>		m_channelLostDetections;
 
 	SyncQueueType	m_rgbdQueue;
 
@@ -191,6 +199,8 @@ private:
 	std::vector<cv::Ptr<cv::Tracker>>	m_bgTrackers;
 
 	DetectionContainer					m_detections;
+	DetectionContainer					m_detectionsNew;
+	DetectionContainer					m_detectionsLost;
 	std::vector<cv::Ptr<cv::Tracker>>	m_trackers;
 };
 

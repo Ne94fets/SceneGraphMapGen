@@ -837,8 +837,9 @@ bool PointCloudRegistration::getVaildPointIn(int c, int r,
 }
 
 bool PointCloudRegistration::getXYZ(float r, float c, float depth, PointType& out) {
-	if(!m_hasKinectRegData)
+	if(!m_hasKinectRegData) {
 		return false;
+	}
 
 	const float depth_val = depth / 1000.0f; //scaling factor, so that value of 1 is one meter.
 
@@ -848,8 +849,8 @@ bool PointCloudRegistration::getXYZ(float r, float c, float depth, PointType& ou
 	}
 
 	out.x = (c + 0.5f - m_cx) * m_fx * depth_val;
-	out.z = -(r + 0.5f - m_cy) * m_fy * depth_val;
 	out.y = depth_val;
+	out.z = -(r + 0.5f - m_cy) * m_fy * depth_val;
 
 	assert(std::isfinite(out.x) &&
 		   std::isfinite(out.y) &&
@@ -859,8 +860,9 @@ bool PointCloudRegistration::getXYZ(float r, float c, float depth, PointType& ou
 }
 
 inline bool PointCloudRegistration::getXYZ(int r, int c, float depth, PointType& out) {
-	if(!m_hasKinectRegData)
+	if(!m_hasKinectRegData) {
 		return false;
+	}
 
 	const float depth_val = depth / 1000.0f; //scaling factor, so that value of 1 is one meter.
 
@@ -870,8 +872,8 @@ inline bool PointCloudRegistration::getXYZ(int r, int c, float depth, PointType&
 	}
 
 	out.x = (c + 0.5f - m_cx) * m_fx * depth_val;
-	out.z = -(r + 0.5f - m_cy) * m_fy * depth_val;
 	out.y = depth_val;
+	out.z = -(r + 0.5f - m_cy) * m_fy * depth_val;
 
 	assert(std::isfinite(out.x) &&
 		   std::isfinite(out.y) &&
