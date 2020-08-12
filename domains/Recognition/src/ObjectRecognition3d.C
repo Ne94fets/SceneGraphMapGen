@@ -454,6 +454,7 @@ void ObjectRecognition3d::trackNewDetections(const Stamped<RGBImgType>& rgbImage
 void ObjectRecognition3d::matchDetectionsIndependentGreedy(const cv::Mat& resizedDetectionImage) {
 	m_trackers.reserve(m_trackers.size() + m_bgTrackers.size());
 	m_detections.reserve(m_detections.size() + m_bgDetections.size());
+	m_detectionsNew.reserve(m_bgDetections.size());
 
 	for(size_t i = 0; i < m_bgTrackers.size(); ++i) {
 		const auto& bgT = m_bgTrackers[i];
@@ -478,6 +479,7 @@ void ObjectRecognition3d::matchDetectionsIndependentGreedy(const cv::Mat& resize
 			bgD.uuid = boost::uuids::random_generator()();
 			m_trackers.push_back(bgT);
 			m_detections.push_back(bgD);
+			m_detectionsNew.push_back(bgD);
 		} else {	// update if overlapping much
 			updateDetection(*fgD, bgD);
 			cv::Rect2d box = rect2ImageCoords(resizedDetectionImage, fgD->box);
