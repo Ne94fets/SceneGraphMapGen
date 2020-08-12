@@ -46,6 +46,7 @@
 
 //#include <transform/Pose.h> // TODO: enable to use Pose2!
 #include <fw/MicroUnit.h>
+#include <filter/ChannelSynchronizerSequenceID.h>
 
 #include <chrono>
 #include <thread>
@@ -74,7 +75,7 @@ public:
 
 	typedef Eigen::Matrix4f	TransformType;
 
-	typedef kinectdatatypes::RGBDQueue<Stamped<DetectionContainer>, Stamped<TransformType>>	SyncQueue;
+	typedef ChannelSynchronizerSequenceID3<DetectionContainer, DetectionContainer, TransformType>	SyncQueue;
 
 
 public:
@@ -101,17 +102,26 @@ protected:
 
 private:
 
-	void onObjectDetection(ChannelRead<DetectionContainer> detections);
-	void onPoseEstimation(ChannelRead<TransformType> globalPose);
+//	void onObjectDetection(ChannelRead<DetectionContainer> detections);
+//	void onObjectNewDetection(ChannelRead<DetectionContainer> detections);
+//	void onPoseEstimation(ChannelRead<TransformType> globalPose);
+
+	void onSyncronized(ChannelRead<DetectionContainer> detections,
+					   ChannelRead<DetectionContainer> detectionsNew,
+					   ChannelRead<TransformType> globalPose);
 	// void onPoseChanged(ChannelRead<Pose2> pose);
 
 	// void setPose(const Pose2& pose
 
-	void process();
+//	void process();
 
-	void analyseDetections(const DetectionContainer& detections, const TransformType& globalTransform);
+	void analyseDetections(const DetectionContainer& detections,
+						   const DetectionContainer& detectionsNew,
+						   const TransformType& globalTransform);
 
 	bool existsObject(const Detection& d);
+	bool existsObjectDBuuid(const Detection& d);
+	bool existsObjectWithin(double minx, double maxx, double miny, double maxy, double minz, double maxz);
 	void addRoom(const boost::uuids::uuid& room);
 	void addObject(const Detection& d, const boost::uuids::uuid& room);
 	void addRelation(const Detection& d, const Detection& other, cv::Point3f& relativeOffset);
@@ -122,7 +132,7 @@ private:
 	neo4j_connection_t* m_connection = nullptr;
 	boost::uuids::uuid	m_room;
 
-	SyncQueue	m_syncQueue;
+	SyncQueue						m_syncQueue;
 
 	std::thread*	m_worker = nullptr;
 
@@ -165,54 +175,83 @@ void GraphMap::initialize() {
 	// add first room
 	addRoom(m_room);
 
-	subscribe<DetectionContainer>("ObjectDetection", &GraphMap::onObjectDetection);
-	subscribe<TransformType>("PCGlobalTransform", &GraphMap::onPoseEstimation);
+//	subscribe<DetectionContainer>("ObjectDetection", &GraphMap::onObjectDetection);
+//	subscribe<TransformType>("PCGlobalTransform", &GraphMap::onPoseEstimation);
+	m_syncQueue.subscribe(*this,
+						  "ObjectDetection",
+						  "ObjectDetectionNew",
+						  "PCGlobalTransform",
+						  &GraphMap::onSyncronized,
+						  this,
+						  Duration::seconds(10));
 
-	if(!m_worker) {
-		m_worker = new std::thread([this](){ process(); });
-	}
+//	if(!m_worker) {
+//		m_worker = new std::thread([this](){ process(); });
+//	}
 }
 
-void GraphMap::onObjectDetection(ChannelRead<DetectionContainer> detections) {
-	m_syncQueue.push0(detections);
-//	analyseDetections(detections->value());
+//void GraphMap::onObjectDetection(ChannelRead<DetectionContainer> detections) {
+//	m_syncQueue.push0(detections);
+//	//	analyseDetections(detections->value());
+//}
+
+//void GraphMap::onObjectNewDetection(ChannelRead<GraphMap::DetectionContainer> detections) {
+//	m_newDetections.push(detections);
+//}
+
+//void GraphMap::onPoseEstimation(ChannelRead<GraphMap::TransformType> globalPose) {
+//	m_syncQueue.push1(globalPose);
+//}
+
+void GraphMap::onSyncronized(ChannelRead<GraphMap::DetectionContainer> detections, ChannelRead<GraphMap::DetectionContainer> detectionsNew, ChannelRead<GraphMap::TransformType> globalPose) {
+	analyseDetections(detections, detectionsNew, globalPose);
 }
 
-void GraphMap::onPoseEstimation(ChannelRead<GraphMap::TransformType> globalPose) {
-	m_syncQueue.push1(globalPose);
-}
+//void GraphMap::process() {
+//	while(!m_shutdown) {
+//		auto startTime = std::chrono::system_clock::now();
 
-void GraphMap::process() {
-	while(!m_shutdown) {
-		auto startTime = std::chrono::system_clock::now();
+//		const auto optionalPair = m_syncQueue.getNewestSyncedPair();
+//		if(!optionalPair) {
+//			std::this_thread::sleep_for(std::chrono::milliseconds(1));
+//			continue;
+//		}
 
-		const auto optionalPair = m_syncQueue.getNewestSyncedPair();
-		if(!optionalPair) {
-			std::this_thread::sleep_for(std::chrono::milliseconds(1));
+//		const auto& pair = *optionalPair;
+//		analyseDetections(pair.first, pair.second);
+
+//		auto endTime = std::chrono::system_clock::now();
+//		auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
+//		if(duration > 1000/30)
+//			std::cout << "GraphMap process took: " << duration << "ms" << std::endl;
+//	}
+//}
+
+void GraphMap::analyseDetections(const DetectionContainer& detections,
+								 const DetectionContainer& detectionsNew,
+								 const TransformType& globalTransform) {
+	if(detections.empty() || detectionsNew.empty())
+		return;
+
+	std::vector<Detection> transformedDetections;
+	transformedDetections.reserve(detections.size());
+	std::vector<Detection> transformedDetectionsNew;
+	transformedDetectionsNew.reserve(detectionsNew.size());
+
+	// transform detections into world coordinate system
+	// only those who are not new detections
+	for(const auto& d : detections) {
+		bool isNew = false;
+		for(const auto& dnew : detectionsNew) {
+			if(d.uuid == dnew.uuid) {
+				isNew = true;
+				break;
+			}
+		}
+		if(isNew) {
 			continue;
 		}
 
-		const auto& pair = *optionalPair;
-		analyseDetections(pair.first, pair.second);
-
-		auto endTime = std::chrono::system_clock::now();
-		auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
-		if(duration > 1000/30)
-			std::cout << "GraphMap process took: " << duration << "ms" << std::endl;
-	}
-}
-
-void GraphMap::analyseDetections(const DetectionContainer& detections, const TransformType& globalTransform) {
-	if(detections.empty())
-		return;
-
-	const size_t numDet = detections.size();
-
-	std::vector<Detection> transformedDetections;
-	transformedDetections.reserve(numDet);
-
-	// transform detections into world coordinate system
-	for(const auto& d : detections) {
 		Detection tDet = d;
 		Eigen::Vector4f pos(d.pos.x, d.pos.y, d.pos.z, 1);
 		pos = globalTransform * pos;
@@ -220,9 +259,17 @@ void GraphMap::analyseDetections(const DetectionContainer& detections, const Tra
 		transformedDetections.push_back(tDet);
 	}
 
+	for(const auto& d : detectionsNew) {
+		Detection tDet = d;
+		Eigen::Vector4f pos(d.pos.x, d.pos.y, d.pos.z, 1);
+		pos = globalTransform * pos;
+		tDet.pos = cv::Point3f(pos.x(), pos.y(), pos.z());
+		transformedDetectionsNew.push_back(tDet);
+	}
+
 	// insert only missing objects
-	for(size_t i = 0; i < numDet; ++i) {
-		const auto& d0 = transformedDetections[i];
+	for(size_t i = 0; i < transformedDetectionsNew.size(); ++i) {
+		const auto& d0 = transformedDetectionsNew[i];
 
 		// insert object in db if not existing
 		if(existsObject(d0)) { continue; }
@@ -230,17 +277,33 @@ void GraphMap::analyseDetections(const DetectionContainer& detections, const Tra
 		addObject(d0, m_room);
 
 		// calc relations to object if other exists
-		for(size_t j = 0; j < numDet; ++j) {
-			const auto& d1 = detections[j];
-			if(i == j || !existsObject(d1)) { continue; }
+		for(size_t j = 0; j < transformedDetections.size(); ++j) {
+			const auto& d1 = transformedDetections[j];
 
 			cv::Point3f rel = d1.pos - d0.pos;
 			addRelation(d0, d1, rel);
 		}
+
+		// put new detection into detections
+		transformedDetections.push_back(d0);
 	}
 }
 
 bool GraphMap::existsObject(const GraphMap::Detection& d) {
+	if(existsObjectDBuuid(d)) {
+		return true;
+	}
+
+	float minx = d.pos.x + d.bboxMin.x;
+	float maxx = d.pos.x + d.bboxMax.x;
+	float miny = d.pos.y + d.bboxMin.y;
+	float maxy = d.pos.y + d.bboxMax.y;
+	float minz = d.pos.z + d.bboxMin.z;
+	float maxz = d.pos.z + d.bboxMax.z;
+	return existsObjectWithin(minx, maxx, miny, maxy, minz, maxz);
+}
+
+bool GraphMap::existsObjectDBuuid(const GraphMap::Detection& d) {
 	const unsigned int numEntries = 1;
 	neo4j_map_entry_t entries[numEntries];
 	std::string uuidStr = boost::uuids::to_string(d.uuid);
@@ -258,13 +321,57 @@ bool GraphMap::existsObject(const GraphMap::Detection& d) {
 	}
 
 	neo4j_result_t* result = neo4j_fetch_next(results);
+	bool hasResult = true;
 	if(!result) {
-		return false;
+		hasResult = false;
 	}
 
 	neo4j_close_results(results);
 
-	return true;
+	return hasResult;
+}
+
+bool GraphMap::existsObjectWithin(double minx, double maxx,
+								  double miny, double maxy,
+								  double minz, double maxz) {
+	const unsigned int numEntries = 6;
+	neo4j_map_entry_t entries[numEntries];
+
+	entries[0] = neo4j_map_kentry(neo4j_string("min_x"),
+								  neo4j_float(minx));
+	entries[1] = neo4j_map_kentry(neo4j_string("min_y"),
+								  neo4j_float(miny));
+	entries[2] = neo4j_map_kentry(neo4j_string("min_z"),
+								  neo4j_float(minz));
+	entries[3] = neo4j_map_kentry(neo4j_string("max_x"),
+								  neo4j_float(maxx));
+	entries[4] = neo4j_map_kentry(neo4j_string("max_y"),
+								  neo4j_float(maxy));
+	entries[5] = neo4j_map_kentry(neo4j_string("max_z"),
+								  neo4j_float(maxz));
+
+	neo4j_value_t params = neo4j_map(entries, numEntries);
+	neo4j_result_stream_t* results = neo4j_run(m_connection, "MATCH (object:object) "
+															 "WHERE "
+															 "object.pos_x > $min_x AND object.pos_x < $max_x AND "
+															 "object.pos_y > $min_y AND object.pos_y < $max_y AND "
+															 "object.pos_z > $min_z AND object.pos_z < $max_z "
+															 "RETURN object", params);
+
+	if(neo4j_check_failure(results)) {
+		const char* msg = neo4j_error_message(results);
+		throw std::runtime_error(msg);
+	}
+
+	neo4j_result_t* result = neo4j_fetch_next(results);
+	bool hasResult = true;
+	if(!result) {
+		hasResult = false;
+	}
+
+	neo4j_close_results(results);
+
+	return hasResult;
 }
 
 void GraphMap::addRoom(const boost::uuids::uuid& room) {
@@ -290,7 +397,7 @@ void GraphMap::addRoom(const boost::uuids::uuid& room) {
 }
 
 void GraphMap::addObject(const GraphMap::Detection& d, const boost::uuids::uuid& room) {
-	const unsigned int numEntries = 3;
+	const unsigned int numEntries = 6;
 	neo4j_map_entry_t entries[numEntries];
 	std::string detectionType = Detection::getTypeName(d.type);
 
@@ -305,12 +412,22 @@ void GraphMap::addObject(const GraphMap::Detection& d, const boost::uuids::uuid&
 	entries[2] = neo4j_map_kentry(neo4j_string("room_uuid"),
 								  neo4j_ustring(roomUUID.c_str(),
 												static_cast<unsigned int>(roomUUID.length())));
+
+	entries[3] = neo4j_map_kentry(neo4j_string("pos_x"),
+								  neo4j_float(static_cast<double>(d.pos.x)));
+	entries[4] = neo4j_map_kentry(neo4j_string("pos_y"),
+								  neo4j_float(static_cast<double>(d.pos.y)));
+	entries[5] = neo4j_map_kentry(neo4j_string("pos_z"),
+								  neo4j_float(static_cast<double>(d.pos.z)));
 	neo4j_value_t params = neo4j_map(entries, numEntries);
 	neo4j_result_stream_t* results = neo4j_send(m_connection, "MATCH (r:room) "
 															  "WHERE r.uuid = $room_uuid "
 															  "CREATE (o:object {"
 															  "uuid: $uuid, "
-															  "name: $type})"
+															  "name: $type, "
+															  "pos_x: $pos_x, "
+															  "pos_y: $pos_y, "
+															  "pos_z: $pos_z})"
 															  "CREATE (r)"
 															  "-[:CONTAINS]->"
 															  "(o)", params);

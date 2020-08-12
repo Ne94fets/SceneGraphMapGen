@@ -92,7 +92,8 @@ public:
 	typedef recognitiondatatypes::Detection				Detection;
 	typedef recognitiondatatypes::DetectionContainer	DetectionContainer;
 
-	typedef kinectdatatypes::RGBDQueue<Stamped<RGBImgType>, Stamped<DepthImgType>>	SyncQueueType;
+	typedef std::vector<RGBImgType>	ImgPyramid;
+	typedef kinectdatatypes::RGBDQueue<Stamped<ImgPyramid>, Stamped<DepthImgType>>	SyncQueueType;
 	typedef typename SyncQueueType::ChannelPair										ChannelPair;
 
 	typedef std::tuple<int, int, float>	ImgDepthPoint;
@@ -122,13 +123,13 @@ private:
 	void backgroundProcess();
 
 	void processPair(const ChannelPair& pair);
-	void startDetection(const Stamped<RGBImgType>& rgbImage);
-	void trackLastDetections(const Stamped<RGBImgType>& rgbImage,
+	void startDetection(const Stamped<ImgPyramid>& rgbImage);
+	void trackLastDetections(const Stamped<ImgPyramid>& rgbImage,
 							 const Stamped<DepthImgType>& depthImage);
-	void trackNewDetections(const Stamped<RGBImgType>& rgbImage,
+	void trackNewDetections(const Stamped<ImgPyramid>& rgbImage,
 							const Stamped<DepthImgType>& depthImage);
 
-	void matchDetectionsIndependentGreedy(const cv::Mat& resizedDetectionImage);
+	void matchDetectionsIndependentGreedy(const Stamped<ImgPyramid>& rgbImage);
 
 	bool getXYZ(const int r, const int c, const float depth,
 				const float cx, const float cy,
@@ -144,6 +145,7 @@ private:
 	void	updateDetection(Detection& toUpdate, const Detection& data);
 	void	updateDetectionBox(Detection& d, const DepthImgType& depth, const cv::Rect2f& box);
 
+	size_t				calcPyramidLevel(const cv::Rect2f& box);
 	cv::Point3f			calcPosition(const DepthImgType& depthImg, const cv::Rect2f& rect);
 	void				calcBBox(Detection& d, const DepthImgType& depthImage, const cv::Rect2f& box);
 	cv::Rect2i			rect2ImageCoords(const Img<>& image, const cv::Rect2f& rect);
@@ -190,7 +192,7 @@ private:
 	std::thread*	m_bgThread = nullptr;
 
 	BackgroundStatus		m_bgStatus = BackgroundStatus::WAITING;
-	Stamped<RGBImgType>		m_detectionImage;
+	Stamped<ImgPyramid>		m_detectionImage;
 	std::mutex				m_detectionImageMutex;
 
 	std::vector<ImgDepthPoint>			m_calcPositionBuffer;

@@ -44,6 +44,7 @@ public:
 	}
 
 public:
+	size_t				pyramidLevel;
 	cv::Rect2f			box;
 	int					type;
 	float				confidence;

@@ -27,6 +27,7 @@ MIRA_ADD_LIBRARY(ObjectRecognition3d
 		MIRABase
 		MIRAFramework
 		opencv_core
+		opencv_highgui
 		opencv_tracking
 		tensorflow_cc
 		RecognitionDataTypes
