@@ -47,8 +47,12 @@
 //#include <transform/Pose.h> // TODO: enable to use Pose2!
 #include <fw/MicroUnit.h>
 
+#include <chrono>
+#include <thread>
+
 #include <neo4j-client.h>
 
+#include "kinectdatatypes/RGBDQueue.h"
 #include "kinectdatatypes/Types.h"
 #include "recognitiondatatypes/Detection.h"
 
@@ -67,6 +71,11 @@ class GraphMap : public MicroUnit {
 public:
 	typedef recognitiondatatypes::Detection				Detection;
 	typedef recognitiondatatypes::DetectionContainer	DetectionContainer;
+
+	typedef Eigen::Matrix4f	TransformType;
+
+	typedef kinectdatatypes::RGBDQueue<Stamped<DetectionContainer>, Stamped<TransformType>>	SyncQueue;
+
 
 public:
 
@@ -93,11 +102,14 @@ protected:
 private:
 
 	void onObjectDetection(ChannelRead<DetectionContainer> detections);
+	void onPoseEstimation(ChannelRead<TransformType> globalPose);
 	// void onPoseChanged(ChannelRead<Pose2> pose);
 
 	// void setPose(const Pose2& pose
 
-	void analyseDetections(const DetectionContainer& detections);
+	void process();
+
+	void analyseDetections(const DetectionContainer& detections, const TransformType& globalTransform);
 
 	bool existsObject(const Detection& d);
 	void addRoom(const boost::uuids::uuid& room);
@@ -105,8 +117,14 @@ private:
 	void addRelation(const Detection& d, const Detection& other, cv::Point3f& relativeOffset);
 
 private:
+	volatile bool	m_shutdown = false;
+
 	neo4j_connection_t* m_connection = nullptr;
 	boost::uuids::uuid	m_room;
+
+	SyncQueue	m_syncQueue;
+
+	std::thread*	m_worker = nullptr;
 
 	//Channel<Img<>> mChannel;
 };
@@ -120,6 +138,13 @@ GraphMap::GraphMap() {
 }
 
 GraphMap::~GraphMap() {
+	m_shutdown = true;
+
+	if(m_worker) {
+		m_worker->join();
+		delete m_worker;
+	}
+
 	if(m_connection)
 		neo4j_close(m_connection);
 
@@ -141,21 +166,63 @@ void GraphMap::initialize() {
 	addRoom(m_room);
 
 	subscribe<DetectionContainer>("ObjectDetection", &GraphMap::onObjectDetection);
+	subscribe<TransformType>("PCGlobalTransform", &GraphMap::onPoseEstimation);
+
+	if(!m_worker) {
+		m_worker = new std::thread([this](){ process(); });
+	}
 }
 
 void GraphMap::onObjectDetection(ChannelRead<DetectionContainer> detections) {
-	analyseDetections(detections->value());
+	m_syncQueue.push0(detections);
+//	analyseDetections(detections->value());
 }
 
-void GraphMap::analyseDetections(const DetectionContainer& detections) {
+void GraphMap::onPoseEstimation(ChannelRead<GraphMap::TransformType> globalPose) {
+	m_syncQueue.push1(globalPose);
+}
+
+void GraphMap::process() {
+	while(!m_shutdown) {
+		auto startTime = std::chrono::system_clock::now();
+
+		const auto optionalPair = m_syncQueue.getNewestSyncedPair();
+		if(!optionalPair) {
+			std::this_thread::sleep_for(std::chrono::milliseconds(1));
+			continue;
+		}
+
+		const auto& pair = *optionalPair;
+		analyseDetections(pair.first, pair.second);
+
+		auto endTime = std::chrono::system_clock::now();
+		auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
+		if(duration > 1000/30)
+			std::cout << "GraphMap process took: " << duration << "ms" << std::endl;
+	}
+}
+
+void GraphMap::analyseDetections(const DetectionContainer& detections, const TransformType& globalTransform) {
 	if(detections.empty())
 		return;
 
 	const size_t numDet = detections.size();
 
-	// insert missing objects
+	std::vector<Detection> transformedDetections;
+	transformedDetections.reserve(numDet);
+
+	// transform detections into world coordinate system
+	for(const auto& d : detections) {
+		Detection tDet = d;
+		Eigen::Vector4f pos(d.pos.x, d.pos.y, d.pos.z, 1);
+		pos = globalTransform * pos;
+		tDet.pos = cv::Point3f(pos.x(), pos.y(), pos.z());
+		transformedDetections.push_back(tDet);
+	}
+
+	// insert only missing objects
 	for(size_t i = 0; i < numDet; ++i) {
-		const auto& d0 = detections[i];
+		const auto& d0 = transformedDetections[i];
 
 		// insert object in db if not existing
 		if(existsObject(d0)) { continue; }
