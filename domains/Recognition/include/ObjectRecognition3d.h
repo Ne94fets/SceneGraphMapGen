@@ -150,7 +150,6 @@ private:
 	void				calcBBox(Detection& d, const DepthImgType& depthImage, const cv::Rect2f& box);
 	cv::Rect2i			rect2ImageCoords(const Img<>& image, const cv::Rect2f& rect);
 	cv::Rect2f			normalizeRect(const Img<>& image, const cv::Rect2f& rect);
-	cv::Rect2d			clampRect(const Img<>& image, const cv::Rect2d& rect);
 	float				overlapPercentage(const cv::Rect2f& r0, const cv::Rect2f& r1);
 	DetectionContainer	readDetections(const std::vector<tf::Tensor>& outputs,
 									   const Stamped<DepthImgType>& depthImage);
@@ -160,6 +159,9 @@ private:
 	// void onPoseChanged(ChannelRead<Pose2> pose);
 
 	// void setPose(const Pose2& pose);
+
+	static cv::Rect2d	clampRect(const Img<>& image, const cv::Rect2d& rect);
+	static void			hogExtractor(const cv::Mat img, const cv::Rect roi, cv::Mat& feat);
 
 private:
 	enum class BackgroundStatus {
