@@ -61,7 +61,6 @@
 #include <kinectdatatypes/RGBDQueue.h>
 
 #include <opencv2/tracking.hpp>
-#include <opencv2/tracking/tracker.hpp>
 
 using namespace mira;
 
@@ -94,7 +93,7 @@ public:
 
 	typedef std::vector<RGBImgType>	ImgPyramid;
 	typedef kinectdatatypes::RGBDQueue<Stamped<ImgPyramid>, Stamped<DepthImgType>>	SyncQueueType;
-	typedef typename SyncQueueType::ChannelPair										ChannelPair;
+	typedef std::pair<Stamped<ImgPyramid>, Stamped<DepthImgType>>					ChannelPair;
 
 	typedef std::tuple<int, int, float>	ImgDepthPoint;
 
@@ -131,11 +130,6 @@ private:
 
 	void matchDetectionsIndependentGreedy(const Stamped<ImgPyramid>& rgbImage);
 
-	bool getXYZ(const int r, const int c, const float depth,
-				const float cx, const float cy,
-				const float fracfx, const float fracfy,
-				cv::Point3f& point);
-
 	int32_t		readNumDetections(const std::vector<tf::Tensor>& outputs);
 	cv::Rect2f	readDetectionRect(const std::vector<tf::Tensor>& outputs, int32_t idx);
 	float		readDetectionConfidence(const std::vector<tf::Tensor>& outputs, int32_t idx);
@@ -161,7 +155,6 @@ private:
 	// void setPose(const Pose2& pose);
 
 	static cv::Rect2d	clampRect(const Img<>& image, const cv::Rect2d& rect);
-	static void			hogExtractor(const cv::Mat img, const cv::Rect roi, cv::Mat& feat);
 
 private:
 	enum class BackgroundStatus {

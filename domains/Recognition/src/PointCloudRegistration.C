@@ -74,6 +74,8 @@ using pcl::visualization::PointCloudColorHandlerCustom;
 
 #include <kinectdatatypes/Types.h>
 #include <kinectdatatypes/RGBDQueue.h>
+#include <kinectdatatypes/RGBDOperations.h>
+using kinectdatatypes::RGBDOperations;
 
 #define DEBUG_MATCHES 0
 #define DEBUG_POINT_CLOUD 0
@@ -179,7 +181,6 @@ private:
 						 const DepthImgType& img,
 						 PointType& cloudPoint);
 	bool getXYZ(float r, float c, float depth, PointType& out);
-	bool getXYZ(int r, int c, float depth, PointType& out);
 
 private:
 	volatile bool m_shutdown = false;
@@ -353,7 +354,7 @@ void PointCloudRegistration::visualize() {
 			visualizer->setCameraPosition(currentPos.x() + back.x(), currentPos.y() + back.y(), currentPos.z() + back.z(),
 											view.x(), view.y(), view.z(),
 											up.x(), up.y(), up.z(), vpKeypoint);
-			visualizer->setCameraFieldOfView(90.f/180.f*M_PI, vpKeypoint);
+			visualizer->setCameraFieldOfView(80.f/180.f*M_PI, vpKeypoint);
 		}
 		visualizer->spinOnce(100);
 	}
@@ -365,7 +366,7 @@ void PointCloudRegistration::process() {
 
 		// sync queues and get a matching pair
 		const auto optionalPair = m_rgbdQueue.getNewestSyncedPair();
-		if(!optionalPair) {
+		if(!optionalPair || !m_hasKinectRegData) {
 			std::this_thread::sleep_for(std::chrono::milliseconds(1));
 			continue;
 		}
@@ -701,7 +702,7 @@ PointCloudRegistration::PointCloudType::Ptr PointCloudRegistration::pair2CloudDe
 		for(int c = 300; c < cols-300; c+=2) {
 			const float *depthValue = lineData + c;
 			PointType cloudPoint;
-			if(getXYZ(r, c, *depthValue, cloudPoint)) {
+			if(RGBDOperations::getXYZ(r, c, *depthValue, m_cx, m_cy, m_fx, m_fy, cloudPoint)) {
 				newCloud->push_back(cloudPoint);
 			}
 		}
@@ -722,7 +723,7 @@ PointCloudRegistration::RGBPointCloudType::Ptr PointCloudRegistration::pair2Clou
 		for(int c = 300; c < cols-300; c+=2) {
 			const float *depthValue = lineData + c;
 			PointXYZ cloudPoint;
-			if(getXYZ(r, c, *depthValue, cloudPoint)) {
+			if(RGBDOperations::getXYZ(r, c, *depthValue, m_cx, m_cy, m_fx, m_fy, cloudPoint)) {
 				RGBImgType::Pixel pix = pair.first(c, r);
 				PointXYZRGB colorPoint(cloudPoint.x,
 									   cloudPoint.y,
@@ -783,13 +784,13 @@ bool PointCloudRegistration::getPoint(const cv::KeyPoint& kp,
 	const float rRatio = y-r;
 	const float depth = depth0 * (1-rRatio) - depth1 * rRatio;
 
-	return getXYZ(r, c, depth, cloudPoint);
+	return RGBDOperations::getXYZ(r, c, depth, m_cx, m_cy, m_fx, m_fy, cloudPoint);
 }
 
 bool PointCloudRegistration::getNearestPointIn(int c, int r,
-											 int roiWidth, int roiHeight,
-											 const DepthImgType& img,
-											 PointType& cloudPoint) {
+											   int roiWidth, int roiHeight,
+											   const DepthImgType& img,
+											   PointType& cloudPoint) {
 	assert(0 <= c && c + roiWidth < img.width() &&
 		   0 <= r && r + roiHeight < img.height());
 
@@ -810,7 +811,7 @@ bool PointCloudRegistration::getNearestPointIn(int c, int r,
 		depthVal += img.width() - roiWidth;
 	}
 
-	return getXYZ(row, col, nearest, cloudPoint);
+	return RGBDOperations::getXYZ(row, col, nearest, m_cx, m_cy, m_fx, m_fy, cloudPoint);
 }
 
 bool PointCloudRegistration::getVaildPointIn(int c, int r,
@@ -825,7 +826,7 @@ bool PointCloudRegistration::getVaildPointIn(int c, int r,
 	for(int j = 0; j < roiHeight; ++j) {
 		for(int i = 0; i < roiWidth; ++i) {
 			float depth = *depthVal;
-			if(getXYZ(r + j, c + i, depth, cloudPoint)) {
+			if(RGBDOperations::getXYZ(r + j, c + i, depth, m_cx, m_cy, m_fx, m_fy, cloudPoint)) {
 				return true;
 			}
 			depthVal++;
@@ -834,51 +835,6 @@ bool PointCloudRegistration::getVaildPointIn(int c, int r,
 	}
 
 	return false;
-}
-
-bool PointCloudRegistration::getXYZ(float r, float c, float depth, PointType& out) {
-	if(!m_hasKinectRegData) {
-		return false;
-	}
-
-	const float depth_val = depth / 1000.0f; //scaling factor, so that value of 1 is one meter.
-
-	if(!std::isfinite(depth) || depth_val <= 0.001f) {
-		//depth value is not valid
-		return false;
-	}
-
-	out.x = (c + 0.5f - m_cx) * m_fx * depth_val;
-	out.y = depth_val;
-	out.z = -(r + 0.5f - m_cy) * m_fy * depth_val;
-
-	assert(std::isfinite(out.x) &&
-		   std::isfinite(out.y) &&
-		   std::isfinite(out.z));
-	return true;
-
-}
-
-inline bool PointCloudRegistration::getXYZ(int r, int c, float depth, PointType& out) {
-	if(!m_hasKinectRegData) {
-		return false;
-	}
-
-	const float depth_val = depth / 1000.0f; //scaling factor, so that value of 1 is one meter.
-
-	if(!std::isfinite(depth) || depth_val <= 0.001f) {
-		//depth value is not valid
-		return false;
-	}
-
-	out.x = (c + 0.5f - m_cx) * m_fx * depth_val;
-	out.y = depth_val;
-	out.z = -(r + 0.5f - m_cy) * m_fy * depth_val;
-
-	assert(std::isfinite(out.x) &&
-		   std::isfinite(out.y) &&
-		   std::isfinite(out.z));
-	return true;
 }
 
 //void PointCloudRegistration::onPoseChanged(ChannelRead<Pose2> data)

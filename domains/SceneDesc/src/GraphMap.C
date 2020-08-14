@@ -106,9 +106,9 @@ private:
 //	void onObjectNewDetection(ChannelRead<DetectionContainer> detections);
 //	void onPoseEstimation(ChannelRead<TransformType> globalPose);
 
-	void onSyncronized(ChannelRead<DetectionContainer> detections,
-					   ChannelRead<DetectionContainer> detectionsNew,
-					   ChannelRead<TransformType> globalPose);
+	void onSynchronized(ChannelRead<DetectionContainer> detections,
+						ChannelRead<DetectionContainer> detectionsNew,
+						ChannelRead<TransformType> globalPose);
 	// void onPoseChanged(ChannelRead<Pose2> pose);
 
 	// void setPose(const Pose2& pose
@@ -181,7 +181,7 @@ void GraphMap::initialize() {
 						  "ObjectDetection",
 						  "ObjectDetectionNew",
 						  "PCGlobalTransform",
-						  &GraphMap::onSyncronized,
+						  &GraphMap::onSynchronized,
 						  this,
 						  Duration::seconds(10));
 
@@ -203,7 +203,7 @@ void GraphMap::initialize() {
 //	m_syncQueue.push1(globalPose);
 //}
 
-void GraphMap::onSyncronized(ChannelRead<GraphMap::DetectionContainer> detections, ChannelRead<GraphMap::DetectionContainer> detectionsNew, ChannelRead<GraphMap::TransformType> globalPose) {
+void GraphMap::onSynchronized(ChannelRead<GraphMap::DetectionContainer> detections, ChannelRead<GraphMap::DetectionContainer> detectionsNew, ChannelRead<GraphMap::TransformType> globalPose) {
 	analyseDetections(detections, detectionsNew, globalPose);
 }
 

@@ -44,6 +44,7 @@ public:
 	}
 
 public:
+	size_t				notVisibleSince = 0;
 	size_t				pyramidLevel;
 	cv::Rect2f			box;
 	int					type;

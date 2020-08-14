@@ -22,6 +22,8 @@ MIRA_ADD_LIBRARY(KinectDataTypes
 		src/Types.C
 		include/kinectdatatypes/RGBDQueue.h
 		src/RGBDQueue.C
+		include/kinectdatatypes/RGBDOperations.h
+		src/RGBDOperations.C
 
 	LINK_LIBS
 		MIRABase

@@ -57,11 +57,17 @@
 
 #include <opencv2/opencv.hpp>
 #include <opencv2/imgproc.hpp>
-#include <opencv2/tracking.hpp>
 
 #include <utils/Time.h>
 
+#include <kinectdatatypes/RGBDOperations.h>
+using kinectdatatypes::RGBDOperations;
+
+#include <recognitiondatatypes/TrackerGenerator.h>
+using recognitiondatatypes::TrackerGenerator;
+
 #define DEBUG_POS_SAMPLING 0
+#define DEBUG_BG_FG_TRACKING 1
 
 namespace tf = tensorflow;
 
@@ -195,7 +201,7 @@ void ObjectRecognition3d::process() {
 
 		// sync queues and get a matching pair
 		const auto optionalPair = m_rgbdQueue.getNewestSyncedPair();
-		if(!optionalPair) {
+		if(!optionalPair || !m_hasRegData) {
 			std::this_thread::sleep_for(std::chrono::milliseconds(1));
 			continue;
 		}
@@ -209,7 +215,7 @@ void ObjectRecognition3d::process() {
 		auto endTime = std::chrono::system_clock::now();
 		auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
 		if(duration > 1000/30)
-			std::cout << "Detectionprocess took: " << duration << "ms" << std::endl;
+			std::cout << "ObjectRec process took: " << duration << "ms" << std::endl;
 	}
 }
 
@@ -343,7 +349,7 @@ void ObjectRecognition3d::trackLastDetections(const Stamped<ImgPyramid>& rgbImag
 	auto trackingStart = std::chrono::system_clock::now();
 
 	size_t validCnt = 0;
-	for(size_t i = 0; i < m_trackers.size(); ++i) {
+	for(size_t i = 0; i < m_detections.size(); ++i) {
 		auto& d = m_detections[i];
 		const auto& img = rgbImage.value()[d.pyramidLevel];
 		cv::Rect2d box;
@@ -374,6 +380,12 @@ void ObjectRecognition3d::trackLastDetections(const Stamped<ImgPyramid>& rgbImag
 			std::swap(m_trackers[validCnt], m_trackers[i]);
 			validCnt++;
 		} else {
+//			if(d.notVisibleSince < 3) {
+//				d.notVisibleSince++;
+//				std::swap(m_detections[validCnt], m_detections[i]);
+//				std::swap(m_trackers[validCnt], m_trackers[i]);
+//				validCnt++;
+//			}
 			auto trackingEnd = std::chrono::system_clock::now();
 			auto trackingDuration = std::chrono::duration_cast<std::chrono::milliseconds>(trackingEnd - trackingStart).count();
 			if(trackingDuration > 1000/30)
@@ -409,26 +421,30 @@ void ObjectRecognition3d::trackNewDetections(const Stamped<ImgPyramid>& rgbImage
 	// update new detections to current image
 	if(!m_bgDetections.empty()) {
 
+#if DEBUG_BG_FG_TRACKING
 		cv::Mat backgroundImage = m_detectionImage.value()[0];
 		cv::Mat currentImage = rgbImage.value()[0];
-
-		// tracker params
-		cv::TrackerKCF::Params params;
-		params.desc_pca = cv::TrackerKCF::GRAY | cv::TrackerKCF::CN;
-		params.desc_npca = 0;
-		params.compress_feature = true;
-		params.compressed_size = 9;
+#endif
 
 		// add more trackers if needed
 		m_bgTrackers.reserve(m_bgDetections.size());
 		for(size_t i = m_bgTrackers.size(); i < m_bgDetections.size(); ++i) {
-			auto tracker = cv::TrackerKCF::create(params);
-			tracker->setFeatureExtractor(hogExtractor);
-			m_bgTrackers.push_back(tracker);
+//			m_bgTrackers.push_back(TrackerGenerator::createKCFHOG());
+			m_bgTrackers.push_back(cv::TrackerKCF::create());
 		}
 
 		size_t validCnt = 0;
 		for(size_t i = 0; i < m_bgDetections.size(); ++i) {
+
+#if DEBUG_BG_FG_TRACKING
+			cv::Scalar colors[] = {{255,0,0},
+								   {0,255,0},
+								   {0,0,255},
+								   {255,255,0},
+								   {255,0,255},
+								   {0,255,255}};
+			cv::Scalar& color = colors[i % 6];
+#endif
 			auto& d = m_bgDetections[i];
 			if(d.confidence < m_confidenceThreshold) {
 				continue;
@@ -439,36 +455,47 @@ void ObjectRecognition3d::trackNewDetections(const Stamped<ImgPyramid>& rgbImage
 
 			// get detection image
 			const auto& detectionImage = m_detectionImage.value()[d.pyramidLevel];
+			auto shortTermTracker = cv::TrackerMedianFlow::create();
 
 			cv::Rect2d box = rect2ImageCoords(detectionImage, d.box);
-			m_bgTrackers[i]->init(detectionImage, box);
+
+			shortTermTracker->init(detectionImage, box);
+
+#if DEBUG_BG_FG_TRACKING
 			{
 				cv::Rect2d debug = rect2ImageCoords(m_currentRGBMarked, d.box);
 				cv::rectangle(static_cast<cv::Mat>(m_currentRGBMarked), debug, cv::Scalar(255, 0, 255), 4);
-				cv::rectangle(backgroundImage, debug, cv::Scalar(255, 0, 255), 4);
+				cv::rectangle(backgroundImage, debug, color, 4);
 			}
+#endif
 
 			// get current image
 			const auto& img = rgbImage.value()[d.pyramidLevel];
 
 			// try to track to current image
 			cv::Rect2d trackedBox;
-			if(!m_bgTrackers[i]->update(img, trackedBox)) {
+			if(!shortTermTracker->update(img, trackedBox)) {
 				continue;
 			}
+
+#if DEBUG_BG_FG_TRACKING
 			{
 				auto normalized = normalizeRect(img, trackedBox);
 				cv::Rect2d debug = rect2ImageCoords(m_currentRGBMarked, normalized);
 				cv::rectangle(static_cast<cv::Mat>(m_currentRGBMarked), debug, cv::Scalar(0, 255, 255), 4);
-				cv::rectangle(currentImage, debug, cv::Scalar(0, 255, 255), 4);
+				cv::rectangle(currentImage, debug, color, 4);
 			}
+#endif
 
 			// clamp box
 			trackedBox = clampRect(img, trackedBox);
 
-			if(trackedBox.width <= 0 || trackedBox.height <= 0) {
+			if(trackedBox.width < 1 || trackedBox.height < 1) {
 				continue;
 			}
+
+			// init faster, better KCF tracker
+			m_bgTrackers[i]->init(img, trackedBox);
 
 			// update detection
 			auto normalized = normalizeRect(img, trackedBox);
@@ -479,10 +506,15 @@ void ObjectRecognition3d::trackNewDetections(const Stamped<ImgPyramid>& rgbImage
 			std::swap(m_bgTrackers[validCnt], m_bgTrackers[i]);
 			validCnt++;
 		}
-		cv::Mat concatMat(backgroundImage.rows, backgroundImage.cols + currentImage.cols, backgroundImage.type());
-		backgroundImage.copyTo(concatMat(cv::Rect(0, 0, backgroundImage.cols, backgroundImage.rows)));
-		currentImage.copyTo(concatMat(cv::Rect(backgroundImage.cols, 0, currentImage.cols, currentImage.rows)));
-		cv::imshow("Background detect", concatMat);
+
+#if DEBUG_BG_FG_TRACKING
+		{
+			cv::Mat concatMat(backgroundImage.rows, backgroundImage.cols + currentImage.cols, backgroundImage.type());
+			backgroundImage.copyTo(concatMat(cv::Rect(0, 0, backgroundImage.cols, backgroundImage.rows)));
+			currentImage.copyTo(concatMat(cv::Rect(backgroundImage.cols, 0, currentImage.cols, currentImage.rows)));
+			cv::imshow("Background detect", concatMat);
+		}
+#endif
 
 		// delete lost trackers
 		m_bgDetections.resize(validCnt);
@@ -532,40 +564,15 @@ void ObjectRecognition3d::matchDetectionsIndependentGreedy(
 			m_detections.push_back(bgD);
 			m_detectionsNew.push_back(bgD);
 		} else {	// update if overlapping much
-			updateDetection(*fgD, bgD);
-			cv::Rect2d box = rect2ImageCoords(img, fgD->box);
-			fgT->init(img, box);
+//			updateDetection(*fgD, bgD);
+//			cv::Rect2d box = rect2ImageCoords(img, fgD->box);
+//			fgT->init(img, box);
 		}
 	}
 
 	// detections and trackers moved to foreground or updated foreground
 	m_bgDetections.clear();
-	m_bgTrackers.clear();
-}
-
-bool ObjectRecognition3d::getXYZ(const int r, const int c, const float depth,
-								 const float cx, const float cy,
-								 const float fracfx, const float fracfy,
-								 cv::Point3f& point) {
-	if(!m_hasRegData) {
-		return false;
-	}
-
-	const float depth_val = depth / 1000.0f; //scaling factor, so that value of 1 is one meter.
-
-	if(!std::isfinite(depth_val) || depth_val <= 0.001f) {
-		//depth value is not valid
-		return false;
-	}
-
-	point.x = (c + 0.5f - cx) * fracfx * depth_val;
-	point.y = depth_val;
-	point.z = -(r + 0.5f - cy) * fracfy * depth_val;
-
-	assert(std::isfinite(point.x) &&
-		   std::isfinite(point.y) &&
-		   std::isfinite(point.z));
-	return true;
+//	m_bgTrackers.clear();
 }
 
 int32_t ObjectRecognition3d::readNumDetections(const std::vector<tensorflow::Tensor>& outputs) {
@@ -623,9 +630,9 @@ void ObjectRecognition3d::updateDetectionBox(Detection& d, const DepthImgType& d
 size_t ObjectRecognition3d::calcPyramidLevel(const cv::Rect2f& box) {
 	float area = box.area();
 
-	if(area > 0.2*0.2) {
-		return 2; //1 if using 2 here MedianTracker will throw error creating its pyramid levels
-	} else if(area > 0.1*0.1) {
+	if(area > 0.3*0.3) {
+		return 2;
+	} else if(area > 0.15*0.15) {
 		return 1;
 	}
 
@@ -682,7 +689,7 @@ cv::Point3f ObjectRecognition3d::calcPosition(const ObjectRecognition3d::DepthIm
 		int r, c;
 		float depth;
 		std::tie(c, r, depth) = m_calcPositionBuffer[i];
-		if(getXYZ(r, c, depth, cx, cy, fracfx, fracfy, out)) {
+		if(RGBDOperations::getXYZ(r, c, depth, cx, cy, fracfx, fracfy, out)) {
 #if DEBUG_POS_SAMPLING
 			m_currentRGBMarked(c,r) = RGBImgType::Pixel(255, 255, 0);
 #endif
@@ -710,8 +717,8 @@ void ObjectRecognition3d::calcBBox(ObjectRecognition3d::Detection& d, const Obje
 
 	cv::Point3f tl3;
 	cv::Point3f br3;
-	getXYZ(tl.y, tl.x, depth, cx, cy, fracfx, fracfy, tl3);
-	getXYZ(br.y, br.x, depth, cx, cy, fracfx, fracfy, br3);
+	RGBDOperations::getXYZ(tl.y, tl.x, depth, cx, cy, fracfx, fracfy, tl3);
+	RGBDOperations::getXYZ(br.y, br.x, depth, cx, cy, fracfx, fracfy, br3);
 
 	float minX, maxX, minY, maxY, minZ, maxZ;
 	std::tie(minX, maxX) = std::minmax(tl3.x, br3.x);
@@ -837,69 +844,6 @@ cv::Rect2d ObjectRecognition3d::clampRect(const Img<>& image, const cv::Rect2d& 
 	double x1 = std::min(br.x, static_cast<double>(image.width()));
 	double y1 = std::min(br.y, static_cast<double>(image.height()));
 	return cv::Rect2d(x0, y0, x1-x0, y1-y0);
-}
-
-void ObjectRecognition3d::hogExtractor(const cv::Mat img, const cv::Rect roi, cv::Mat& feat) {
-	cv::Mat sobel[2];
-	cv::Mat patch;
-	cv::Rect region=roi;
-
-	// extract patch inside the image
-	if(roi.x<0){region.x=0;region.width+=roi.x;}
-	if(roi.y<0){region.y=0;region.height+=roi.y;}
-	if(roi.x+roi.width>img.cols)region.width=img.cols-roi.x;
-	if(roi.y+roi.height>img.rows)region.height=img.rows-roi.y;
-	if(region.width>img.cols)region.width=img.cols;
-	if(region.height>img.rows)region.height=img.rows;
-
-	patch=img(region).clone();
-	cv::cvtColor(patch,patch, CV_BGR2GRAY);
-
-	// add some padding to compensate when the patch is outside image border
-	int addTop,addBottom, addLeft, addRight;
-	addTop=region.y-roi.y;
-	addBottom=(roi.height+roi.y>img.rows?roi.height+roi.y-img.rows:0);
-	addLeft=region.x-roi.x;
-	addRight=(roi.width+roi.x>img.cols?roi.width+roi.x-img.cols:0);
-
-	cv::copyMakeBorder(patch,patch,addTop,addBottom,addLeft,addRight,cv::BORDER_REPLICATE);
-
-	int rows = patch.rows / 8;
-	int cols = patch.cols / 8;
-
-	cv::Mat gx, gy;
-	cv::Sobel(patch, gx, CV_32F, 1, 0, 1);
-	cv::Sobel(patch, gy, CV_32F, 0, 1, 1);
-
-	cv::Mat mag, angle;
-	cv::cartToPolar(gx, gy, mag, angle, false);
-
-	std::vector<cv::Mat> hists(9, cv::Mat(patch.rows, patch.cols, CV_32F));
-	for(int y = 0; y < rows; ++y) {
-		for(int x = 0; x < cols; ++x) {
-			float sum = 0;
-			std::vector<float> hist(9, 0);
-			cv::Rect histRoi(x*8, y*8, 8, 8);
-			cv::Mat histMag = mag(histRoi);
-			cv::Mat histAng = angle(histRoi);
-			for(auto itMag = histMag.begin<float>(), itAngle = histAng.begin<float>();
-				itMag != histMag.end<float>(); ++itMag, ++itAngle) {
-				float m = *itMag;
-				float a = *itAngle;
-				float binf = a / (2*M_PI/9);
-				int bin = static_cast<int>(std::floor(binf));
-				hist.at(bin) += (1 - (binf - bin)) * m;
-				hist.at((bin + 1) % 9) += (binf - bin) * m;
-				sum += m;
-			}
-
-			for(size_t i = 0; i < hist.size(); ++i) {
-				hists[i].at<float>(y, x) = hist[i] / sum;
-			}
-		}
-	}
-
-	cv::merge(hists, feat);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
