@@ -77,8 +77,8 @@ using pcl::visualization::PointCloudColorHandlerCustom;
 #include <kinectdatatypes/RGBDOperations.h>
 using kinectdatatypes::RGBDOperations;
 
-#define DEBUG_MATCHES 0
-#define DEBUG_POINT_CLOUD 0
+#define DEBUG_MATCHES 1
+#define DEBUG_POINT_CLOUD 1
 
 using namespace mira;
 using namespace pcl;
@@ -150,6 +150,8 @@ private:
 	void onKinectRegistrationData(ChannelRead<KinectRegistrationData> data);
 	void onDepthImage(ChannelRead<DepthImgType> image);
 	void onRGBImage(ChannelRead<RGBImgType> image);
+	void onCam2RobotTransform(ChannelRead<TransformType> trans);
+
 	void visualize();
 	void process();
 	void processPair(const ChannelPair& pair);
@@ -216,6 +218,8 @@ private:
 	std::thread*	m_thread = nullptr;
 	std::thread*	m_visThread = nullptr;
 
+	TransformType	m_cam2RobotTransform = TransformType::Identity();
+
 	TransformType	m_globalTransform = TransformType::Identity();
 	TransformType	m_localTransform = TransformType::Identity();
 
@@ -260,6 +264,7 @@ void PointCloudRegistration::initialize() {
 	m_channelLocalTransform = publish<TransformType>("PCLocalTransform");
 
 	subscribe<KinectRegistrationData>("KinectRegData", &PointCloudRegistration::onKinectRegistrationData);
+	subscribe<TransformType>("Cam2RobotTransform", &PointCloudRegistration::onCam2RobotTransform);
 	subscribe<RGBImgType>("RGBImageFull", &PointCloudRegistration::onRGBImage);
 	subscribe<DepthImgType>("DepthImageFull", &PointCloudRegistration::onDepthImage);
 
@@ -309,6 +314,10 @@ void PointCloudRegistration::onRGBImage(ChannelRead<RGBImgType> image) {
 	m_rgbdQueue.push0(stamped);
 }
 
+void PointCloudRegistration::onCam2RobotTransform(ChannelRead<PointCloudRegistration::TransformType> trans) {
+	m_cam2RobotTransform = trans;
+}
+
 void PointCloudRegistration::visualize() {
 	int	vpKeypoint, vpFull;
 	pcl::visualization::PCLVisualizer::Ptr visualizer = std::make_shared<pcl::visualization::PCLVisualizer>("Registration");
@@ -353,7 +362,7 @@ void PointCloudRegistration::visualize() {
 			Eigen::Vector4f back = m_globalTransform * Eigen::Vector4f(0,0,0,0);
 			visualizer->setCameraPosition(currentPos.x() + back.x(), currentPos.y() + back.y(), currentPos.z() + back.z(),
 											view.x(), view.y(), view.z(),
-											up.x(), up.y(), up.z(), vpKeypoint);
+											up.x(), up.y(), up.z());
 			visualizer->setCameraFieldOfView(80.f/180.f*M_PI, vpKeypoint);
 		}
 		visualizer->spinOnce(100);
@@ -703,6 +712,7 @@ PointCloudRegistration::PointCloudType::Ptr PointCloudRegistration::pair2CloudDe
 			const float *depthValue = lineData + c;
 			PointType cloudPoint;
 			if(RGBDOperations::getXYZ(r, c, *depthValue, m_cx, m_cy, m_fx, m_fy, cloudPoint)) {
+				transform(cloudPoint, m_cam2RobotTransform);
 				newCloud->push_back(cloudPoint);
 			}
 		}
@@ -736,6 +746,9 @@ PointCloudRegistration::RGBPointCloudType::Ptr PointCloudRegistration::pair2Clou
 			}
 		}
 	}
+
+	pcl::transformPointCloud(*newCloud, *newCloud, m_cam2RobotTransform);
+
 	return newCloud;
 }
 
@@ -752,7 +765,13 @@ void PointCloudRegistration::getCloud(std::vector<cv::KeyPoint>& features,
 	for(size_t i = 0; i < features.size(); ++i) {
 		const cv::KeyPoint& kp = features[i];
 		if(getNearestPointIn(kp.pt.x, kp.pt.y, 3, 3, img, cloudPoint)) {
+			// move point relative to robot
+			transform(cloudPoint, m_cam2RobotTransform);
+
+			// add to cloud
 			cloud->push_back(cloudPoint);
+
+			// save features to point
 			features[validPointsCnt] = kp;
 			descriptors.row(i).copyTo(descriptors.row(validPointsCnt));
 			validPointsCnt++;
