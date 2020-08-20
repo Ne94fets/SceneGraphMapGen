@@ -77,8 +77,8 @@ using pcl::visualization::PointCloudColorHandlerCustom;
 #include <kinectdatatypes/RGBDOperations.h>
 using kinectdatatypes::RGBDOperations;
 
-#define DEBUG_MATCHES 1
-#define DEBUG_POINT_CLOUD 1
+#define DEBUG_MATCHES 0
+#define DEBUG_POINT_CLOUD 0
 
 using namespace mira;
 using namespace pcl;
@@ -193,7 +193,7 @@ private:
 
 	SyncQueueType	m_rgbdQueue;
 
-	size_t							m_featureMaxPoints = 100;
+	size_t							m_featureMaxPoints = 50;
 	cv::Ptr<FeatureDetectorType>	m_featureDetector;
 	cv::Ptr<FeatureMatcherType>		m_featureMatcher;
 
@@ -226,6 +226,9 @@ private:
 	Channel<TransformType>	m_channelGlobalTransfrom;
 	Channel<TransformType>	m_channelLocalTransform;
 //	Channel<PointCloud<Eigen::Vector3f>	m_channelPointCloud;
+
+	size_t	m_measurementCnt = 0;
+	size_t	m_accumulatedProcessingTime = 0;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -388,6 +391,9 @@ void PointCloudRegistration::process() {
 
 		auto endTime = std::chrono::system_clock::now();
 		auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
+		m_measurementCnt++;
+		m_accumulatedProcessingTime += duration;
+		std::cout << "PCL avg process time: " << (double)m_accumulatedProcessingTime / m_measurementCnt << std::endl;
 		if(duration > 1000/30)
 			std::cout << "PCL process took: " << duration << "ms" << std::endl;
 	}
@@ -577,10 +583,11 @@ bool PointCloudRegistration::getTransformRANSAC(const HistoryEntry& newEntry,
 	pcl::registration::TransformationEstimation2D<PointType, PointType> estimator;
 
 	size_t maxInliers = 0;
+	pcl::Correspondences inlCorres;
 	// RANSAC draws = log(1 - z) / log(1 - w^n)
 	// z = 0.99, w = 0.5 (50% of matches are good), n = numSamples
 	const double probErrorFreeSample = 0.99;
-	const double probMatchGood = 0.50;
+	const double probMatchGood = 0.20;
 	const size_t maxDraws = static_cast<int>(std::ceil(std::log(1 - probErrorFreeSample) /
 													   std::log(1 - std::pow(probMatchGood, numSamples))));
 	for(size_t i = 0; i < maxDraws; ++i) {
@@ -627,20 +634,24 @@ bool PointCloudRegistration::getTransformRANSAC(const HistoryEntry& newEntry,
 			float dist = pcl::euclideanDistance(last, cur);
 			if(dist < 0.03) {
 				inliersCnt++;
+				corres.push_back(pcl::Correspondence(matches[j].queryIdx, matches[j].trainIdx, matches[j].distance));
 			}
 		}
 
 		if(inliersCnt > maxInliers) {
 			maxInliers = inliersCnt;
 			src2target = tmpSrc2Tgt;
+			inlCorres = std::move(corres);
 		}
 	}
 
-	if(maxInliers < matches.size()/2) {
+	if(maxInliers < matches.size() * probMatchGood) {
 		return false;
 	}
 
 	inliers = maxInliers;
+
+	estimator.estimateRigidTransformation(*newEntry.keyPoints3D, *entry.keyPoints3D, inlCorres, src2target);
 
 	return true;
 }
@@ -649,6 +660,7 @@ void PointCloudRegistration::pair2Cloud(const ChannelPair& pair,
 										HistoryEntry& newEntry) {
 	typedef std::tuple<std::vector<cv::KeyPoint>, cv::Mat, int, int> FutureReturnType;
 	std::vector<std::future<FutureReturnType>> futures;
+
 	// detectAndCompute is faster than detecting, discarding at getCloud and compute afterwards
 	int stepHeight = pair.first.height()/2;
 	int stepWidth = pair.first.width()/2;
@@ -663,6 +675,7 @@ void PointCloudRegistration::pair2Cloud(const ChannelPair& pair,
 			}, part, x, y));
 		}
 	}
+
 	std::vector<cv::KeyPoint> features;
 	cv::Mat descriptors;
 
