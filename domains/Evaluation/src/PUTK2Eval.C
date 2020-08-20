@@ -142,10 +142,14 @@ private:
 ///////////////////////////////////////////////////////////////////////////////
 
 PUTK2Eval::PUTK2Eval() : Unit(Duration::milliseconds(1000/10)) { // kinect has 30 FPS
-	m_regData.rgb_p.cx = 959.5;
-	m_regData.rgb_p.cy = 539.5;
-	m_regData.rgb_p.fx = 1081.3720703125;
-	m_regData.rgb_p.fy = 1081.3720703125;
+//	m_regData.rgb_p.cx = 959.5;
+//	m_regData.rgb_p.cy = 539.5;
+//	m_regData.rgb_p.fx = 1081.3720703125;
+//	m_regData.rgb_p.fy = 1081.3720703125;
+	m_regData.rgb_p.cx = 952.6592286;
+	m_regData.rgb_p.cy = 530.7386644;
+	m_regData.rgb_p.fx = 1078.68499;
+	m_regData.rgb_p.fy = 1076.4742562;
 
 	m_cam2RobotTransfrom =
 			Eigen::Affine3f(Eigen::AngleAxisf(1.29/180.0*M_PI, Eigen::Vector3f(0, 0, 1))).matrix() *
@@ -210,6 +214,7 @@ void PUTK2Eval::process(const Timer& timer) {
 	DepthImgType depth;
 
 	tmpRGB.copyTo(rgb);
+	// convert 16-bit to float
 	tmpDepth.convertTo(depth, CV_32F);
 
 	ChannelWrite<RGBImgType> wRGBFull = m_channelRGBFull.write();
