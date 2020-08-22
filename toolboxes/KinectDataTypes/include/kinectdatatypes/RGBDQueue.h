@@ -55,7 +55,7 @@ public:
 		bool skipping = false;
 		unsigned int prevSequenceID = 0;
 
-		while(m_channel0Queue.size() > 1 && m_channel1Queue.size() > 1) {
+		while(!m_channel0Queue.empty() && !m_channel1Queue.empty()) {
 			// pop rgb images before next depth image
 			while(!m_channel0Queue.empty() && m_channel0Queue.front().sequenceID < m_channel1Queue.front().sequenceID) {
 				std::cout << "No matching depth image. Dropping RGB image. FrameNumber: " << m_channel0Queue.front().sequenceID << std::endl;
