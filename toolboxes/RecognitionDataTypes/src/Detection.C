@@ -22,7 +22,21 @@ Detection::Detection(const cv::Rect2f& box,
 
 }
 
-std::string Detection::getTypeName(int type) {
+cv::Rect2f Detection::boxOnImage(const cv::Size2i& imgSize, cv::Rect2f box) {
+	return cv::Rect2f(box.x * imgSize.width,
+					  box.y * imgSize.height,
+					  box.width * imgSize.width,
+					  box.height * imgSize.height);
+}
+
+cv::Rect2f Detection::normalizeBox(const cv::Size2i& imgSize, cv::Rect2f box) {
+	return cv::Rect2f(box.x / imgSize.width,
+					  box.y / imgSize.height,
+					  box.width / imgSize.width,
+					  box.height / imgSize.height);
+}
+
+const std::string& Detection::getTypeName(int type) {
 	auto iter = m_lookupMap.find(type);
 	if(iter == m_lookupMap.end())
 		throw std::runtime_error("type not found");

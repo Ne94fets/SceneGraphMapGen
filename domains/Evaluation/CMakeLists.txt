@@ -1,6 +1,7 @@
 
 MIRA_REQUIRE_PACKAGE(Evaluation)
 MIRA_REQUIRE_PACKAGE(KinectDataTypes)
+MIRA_REQUIRE_PACKAGE(RecognitionDataTypes)
 
 ###############################################################################
 
@@ -31,3 +32,24 @@ MIRA_ADD_LIBRARY(PUTK2Eval
 		KinectDataTypes
 		opencv_highgui
 )
+
+###############################################################################
+
+MIRA_ADD_LIBRARY(SUNRGBDEval
+	SHARED
+	PACKAGE Evaluation
+	SOURCE
+		etc/SUNRGBDEval.xml
+		src/SUNRGBDEval.C
+
+	LINK_LIBS
+		MIRABase
+		MIRAFramework
+		KinectDataTypes
+		RecognitionDataTypes
+		opencv_highgui
+)
+
+set_target_properties(SUNRGBDEval PROPERTIES
+	CXX_STANDARD 17
+	CXX_EXTENSIONS OFF)

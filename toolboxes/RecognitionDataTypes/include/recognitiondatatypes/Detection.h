@@ -28,7 +28,10 @@ public:
 			  const cv::Point3f& bboxMin,
 			  const cv::Point3f& bboxMax);
 
-	static std::string getTypeName(int type);
+	static cv::Rect2f boxOnImage(const cv::Size2i& imgSize, cv::Rect2f box);
+	static cv::Rect2f normalizeBox(const cv::Size2i& imgSize, cv::Rect2f box);
+
+	static const std::string& getTypeName(int type);
 
 public:
 	MIRA_NO_GENERIC_REFLECT_MEMBER(Detection)

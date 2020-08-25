@@ -24,6 +24,28 @@ if(NOT EXISTS "${DOWNLOAD_DIR}")
 	endif()
 endif()
 
+### install rapidjson
+set(RAPJSON_DIR "${EXTERNAL_DIR}/rapidjson")
+if(NOT EXISTS "${RAPJSON_DIR}")
+	message(STATUS "Downloading RapidJson")
+	execute_process(
+		COMMAND git clone "https://github.com/Tencent/rapidjson.git" ${RAPJSON_DIR}
+		ERROR_VARIABLE EXEC_ERR)
+	if(${RESULT_VARIABLE})
+		message(FATAL_ERROR ${EXEC_ERR})
+	endif()
+	message(STATUS "Check out v1.1.0")
+	execute_process(
+		COMMAND git checkout v1.1.0
+		WORKING_DIRECTORY ${RAPJSON_DIR}
+		ERROR_VARIABLE EXEC_ERR)
+	if(${RESULT_VARIABLE})
+		message(FATAL_ERROR ${EXEC_ERR})
+	endif()
+endif()
+
+INCLUDE_DIRECTORIES("${RAPJSON_DIR}/include")
+
 ### make sure opencv 4.3.0 is installed
 set(OPENCV_DIR "${EXTERNAL_DIR}/opencv")
 set(OPENCV_CONTRIB_DIR "${EXTERNAL_DIR}/opencv_contrib")

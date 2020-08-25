@@ -78,7 +78,7 @@ using pcl::visualization::PointCloudColorHandlerCustom;
 using kinectdatatypes::RGBDOperations;
 
 #define DEBUG_MATCHES 0
-#define DEBUG_POINT_CLOUD 0
+#define DEBUG_POINT_CLOUD 1
 
 using namespace mira;
 using namespace pcl;

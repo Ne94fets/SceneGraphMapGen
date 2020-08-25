@@ -141,7 +141,7 @@ private:
 
 ///////////////////////////////////////////////////////////////////////////////
 
-PUTK2Eval::PUTK2Eval() : Unit(Duration::milliseconds(1000/10)) { // kinect has 30 FPS
+PUTK2Eval::PUTK2Eval() : Unit(Duration::milliseconds(1000/10)) { // kinect has 30 FPS, but was recorded with 10 FPS
 //	m_regData.rgb_p.cx = 959.5;
 //	m_regData.rgb_p.cy = 539.5;
 //	m_regData.rgb_p.fx = 1081.3720703125;

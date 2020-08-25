@@ -122,7 +122,7 @@ private:
 	void backgroundProcess();
 
 	void processPair(const ChannelPair& pair);
-	void startDetection(const Stamped<ImgPyramid>& rgbImage);
+	void startDetection(const ChannelPair& pair);
 	void trackLastDetections(const Stamped<ImgPyramid>& rgbImage,
 							 const Stamped<DepthImgType>& depthImage);
 	void trackNewDetections(const Stamped<ImgPyramid>& rgbImage,
@@ -142,8 +142,6 @@ private:
 	size_t				calcPyramidLevel(const cv::Rect2f& box);
 	cv::Point3f			calcPosition(const DepthImgType& depthImg, const cv::Rect2f& rect);
 	void				calcBBox(Detection& d, const DepthImgType& depthImage, const cv::Rect2f& box);
-	cv::Rect2i			rect2ImageCoords(const Img<>& image, const cv::Rect2f& rect);
-	cv::Rect2f			normalizeRect(const Img<>& image, const cv::Rect2f& rect);
 	float				overlapPercentage(const cv::Rect2f& r0, const cv::Rect2f& r1);
 	DetectionContainer	readDetections(const std::vector<tf::Tensor>& outputs,
 									   const Stamped<DepthImgType>& depthImage);
@@ -187,7 +185,7 @@ private:
 	std::thread*	m_bgThread = nullptr;
 
 	BackgroundStatus		m_bgStatus = BackgroundStatus::WAITING;
-	Stamped<ImgPyramid>		m_detectionImage;
+	ChannelPair				m_detectionImage;
 	std::mutex				m_detectionImageMutex;
 
 	std::vector<ImgDepthPoint>			m_calcPositionBuffer;
