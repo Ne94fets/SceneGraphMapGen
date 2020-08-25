@@ -452,12 +452,6 @@ void SUNRGBDEval::onObjectDetection(ChannelRead<SUNRGBDEval::DetectionContainer>
 	// write det to det document
 	rapidjson::Document::AllocatorType& detAlloc = m_detDoc.GetAllocator();
 	for(const auto& det : *detections) {
-		// do not add detections that do not exist as ground truth type
-		// results in less SNR ratio
-		if(m_revName2IDMap.find(det.type) == m_revName2IDMap.end()) {
-			continue;
-		}
-
 		rapidjson::Value jsonDetObj(rapidjson::kObjectType);
 		try {
 			jsonDetObj.AddMember("image_id", rapidjson::Value().SetInt(currentSequenceID), detAlloc);
