@@ -1,9 +1,12 @@
 #include "recognitiondatatypes/Detection.h"
 
+#include <boost/uuid/nil_generator.hpp>
+
 namespace recognitiondatatypes {
 
 
-Detection::Detection() {
+Detection::Detection()
+	: uuid(boost::uuids::nil_uuid()) {
 
 }
 
@@ -18,7 +21,8 @@ Detection::Detection(const cv::Rect2f& box,
 	  confidence(confidence),
 	  pos(pos),
 	  bboxMin(bboxMin),
-	  bboxMax(bboxMax) {
+	  bboxMax(bboxMax),
+	  uuid(boost::uuids::nil_uuid()) {
 
 }
 
