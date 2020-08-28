@@ -54,6 +54,7 @@
 #include <optional>
 #include <mutex>
 #include <thread>
+#include <condition_variable>
 #include <utility>
 
 #include <recognitiondatatypes/Detection.h>
@@ -165,6 +166,7 @@ private:
 
 	float	m_overlappingThreshold = 0.5f;
 	float	m_confidenceThreshold = 0.5f;
+	int		m_sampleGridSize = 100;
 
 	RGBImgType						m_currentRGBMarked;
 	Channel<RGBImgType>				m_channelRGBMarked;
@@ -177,24 +179,26 @@ private:
 	tf::Session*	m_session = nullptr;
 
 	RegistrationData	m_regData;
-	bool				m_hasRegData = false;
+	volatile bool		m_hasRegData = false;
 
 	std::mutex	m_processingMutex;
 
 	std::thread*	m_trackThread = nullptr;
 	std::thread*	m_bgThread = nullptr;
 
+
 	BackgroundStatus		m_bgStatus = BackgroundStatus::WAITING;
+	std::condition_variable	m_bgCondition;
 	ChannelPair				m_detectionImage;
 	std::mutex				m_detectionImageMutex;
 
 	std::vector<ImgDepthPoint>			m_calcPositionBuffer;
 
+	std::mutex							m_bgDetectionsMutex;
 	std::vector<Detection>				m_bgDetections;
 	std::vector<cv::Ptr<cv::Tracker>>	m_bgTrackers;
 
 	DetectionContainer					m_detections;
-	DetectionContainer					m_detectionsNew;
 	DetectionContainer					m_detectionsLost;
 	std::vector<cv::Ptr<cv::Tracker>>	m_trackers;
 };

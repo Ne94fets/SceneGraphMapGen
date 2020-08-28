@@ -93,7 +93,7 @@ public:
 	{
 		MIRA_REFLECT_BASE(r, Unit);
 
-		r.property("Path to data set", m_path2DataSet, "Path to data set to evaluate", "external/evalData/SUNRGBD/kv2/img/");
+		r.property("Path to data set", m_path2DataSet, "Path to data set to evaluate", "external/evalData/SUNRGBD/kv2/align_kv2/");
 		r.property("Start", m_start, "Start evaluation", false);
 	}
 
@@ -106,7 +106,7 @@ protected:
 private:
 
 	void onObjectDetection(ChannelRead<DetectionContainer> detections);
-	void writeJSONDocs();
+	void writeOutputs();
 	void addCategories();
 	// void onPoseChanged(ChannelRead<Pose2> pose);
 
@@ -123,10 +123,9 @@ private:
 	float	m_IoU2D = 0.5;
 	float	m_IoU3D = 0.25;
 
-	size_t	m_truePositives = 0;
-	size_t	m_falsePositives = 0;
+	std::unordered_map<int, std::string>		m_revName2IDMap;
+	std::unordered_map<int, std::vector<float>>	m_rmsePerCategory;
 
-	std::unordered_map<int, std::string>	m_revName2IDMap;
 	size_t			m_gtAnnID = 0;
 	size_t			m_imgSequenceID = 0;
 	size_t			m_loadedSequenceID = 1;
@@ -137,8 +136,8 @@ private:
 
 	RegistrationData	m_regData;
 
-	std::queue<std::string>	m_sentDirs;
-	std::queue<RGBImgType>	m_sentImgs;
+	RGBImgType				m_rgb;
+	DepthImgType			m_depth;
 
 	std::filesystem::directory_iterator	m_dirIter;
 
@@ -147,7 +146,7 @@ private:
 	Channel<DepthImgType>		m_channelDepthFull;	// float unit: [mm] Non-positive, NaN, and infinity are invalid or missing data.
 	//Channel<Img<>> mChannel;
 
-	static std::unordered_map<std::string, int> m_name2IDMap;
+	static std::unordered_map<std::string, int> m_SUNRGBDName2COCOIDMap;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -159,8 +158,9 @@ SUNRGBDEval::SUNRGBDEval() : Unit(Duration::milliseconds(3000)) {
 	m_regData.rgb_p.fy = 529.5;
 	// TODO: further initialization of members, etc.
 
-	for(const auto& pair : m_name2IDMap) {
+	for(const auto& pair : m_SUNRGBDName2COCOIDMap) {
 		m_revName2IDMap[pair.second] = pair.first;
+		m_rmsePerCategory[pair.second] = std::vector<float>();
 	}
 }
 
@@ -177,17 +177,8 @@ void SUNRGBDEval::process(const Timer& timer) {
 		return;
 	}
 
-	// need this to run image twice trough ObjectRecognition3d
-	// 1st run will be analysed, 2nd tracks and clears background process
-	if(m_imgSequenceID != m_loadedSequenceID) {
-		m_rerun = false;
-	}
-
 	if(!m_initRound) {
 		m_initRound = true;
-
-		m_truePositives = 0;
-		m_falsePositives = 0;
 
 		m_imgSequenceID = 0;
 		m_gtAnnID = 0;
@@ -212,8 +203,6 @@ void SUNRGBDEval::process(const Timer& timer) {
 
 		m_detDoc.SetArray();
 
-//		m_detDoc.Accept(m_detOut);
-
 		m_dirIter = fs::directory_iterator(m_path2DataSet);
 	}
 
@@ -224,7 +213,7 @@ void SUNRGBDEval::process(const Timer& timer) {
 	if(m_dirIter == std::filesystem::end(m_dirIter)) {
 		m_start = false;
 		m_initRound = false;
-		writeJSONDocs();
+		writeOutputs();
 		m_gtOut.close();
 		m_detOut.close();
 		return;
@@ -260,16 +249,13 @@ void SUNRGBDEval::process(const Timer& timer) {
 	if(tmpRGB.empty() || tmpDepth.empty()) {
 		m_start = false;
 		m_initRound = false;
-		writeJSONDocs();
+		writeOutputs();
 		m_gtOut.close();
 		m_detOut.close();
 		return;
 	}
 
-	RGBImgType rgb;
-	DepthImgType depth;
-
-	tmpRGB.copyTo(rgb);
+	tmpRGB.copyTo(m_rgb);
 //	cv::resize(tmpRGB, rgb, cv::Size2i(1920, 1080), 0, 0, cv::INTER_CUBIC);
 	// convert 16-bit shifted img to float, took from read3dPoints.m in SUNRGBDtoolbox
 	for(auto pixIter = tmpDepth.begin<ushort>(); pixIter != tmpDepth.end<ushort>(); ++pixIter) {
@@ -278,33 +264,39 @@ void SUNRGBDEval::process(const Timer& timer) {
 	}
 //	cv::Mat tmpDepthBig;
 //	cv::resize(tmpDepth, tmpDepthBig, cv::Size2i(1920, 1080), 0, 0, cv::INTER_NEAREST);
-	tmpDepth.convertTo(depth, CV_32F);
+	tmpDepth.convertTo(m_depth, CV_32F);
 
 	ChannelWrite<RGBImgType> wRGBFull = m_channelRGBFull.write();
 	wRGBFull->sequenceID = m_imgSequenceID;
 	wRGBFull->timestamp = captureTime;
-	wRGBFull->value() = rgb;
-	m_sentImgs.push(rgb);
+	wRGBFull->value() = m_rgb;
 
 	ChannelWrite<DepthImgType> wDepthFull = m_channelDepthFull.write();
 	wDepthFull->sequenceID = m_imgSequenceID;
 	wDepthFull->timestamp = captureTime;
-	wDepthFull->value() = depth;
+	wDepthFull->value() = m_depth;
 
-	if(m_loadedSequenceID != m_imgSequenceID) {
-		m_loadedSequenceID = m_imgSequenceID;
-	} else {
+	if(m_imgSequenceID == m_loadedSequenceID) {
 		m_rerun = true;
+	} else {
+		m_rerun = false;
 	}
 }
 
 void SUNRGBDEval::onObjectDetection(ChannelRead<SUNRGBDEval::DetectionContainer> detections) {
+	// resend image to clear background detections
+	const auto captureTime = Time::now();
+	ChannelWrite<RGBImgType> wRGBFull = m_channelRGBFull.write();
+	wRGBFull->sequenceID = m_imgSequenceID;
+	wRGBFull->timestamp = captureTime;
+	wRGBFull->value() = m_rgb;
 
-	cv::Mat currentImg = m_sentImgs.front();
-//	cv::resize(m_sentImgs.front(), currentImg, cv::Size2i(730, 530));
-	while(!m_sentImgs.empty()) {
-		m_sentImgs.pop();
-	}
+	ChannelWrite<DepthImgType> wDepthFull = m_channelDepthFull.write();
+	wDepthFull->sequenceID = m_imgSequenceID;
+	wDepthFull->timestamp = captureTime;
+	wDepthFull->value() = m_depth;
+
+	cv::Mat currentImg = m_rgb;
 	cv::Size2i imgSize = cv::Size(currentImg.cols, currentImg.rows);
 	size_t currentSequenceID = detections->sequenceID;
 
@@ -452,12 +444,13 @@ void SUNRGBDEval::onObjectDetection(ChannelRead<SUNRGBDEval::DetectionContainer>
 	// write det to det document
 	rapidjson::Document::AllocatorType& detAlloc = m_detDoc.GetAllocator();
 	for(const auto& det : *detections) {
+		auto resizedBox = Detection::boxOnImage(imgSize, det.box);
+
 		rapidjson::Value jsonDetObj(rapidjson::kObjectType);
 		try {
 			jsonDetObj.AddMember("image_id", rapidjson::Value().SetInt(currentSequenceID), detAlloc);
 			jsonDetObj.AddMember("category_id", rapidjson::Value().SetInt(det.type), detAlloc);
 
-			auto resizedBox = Detection::boxOnImage(imgSize, det.box);
 			rapidjson::Value bbox(rapidjson::kArrayType);
 			bbox.PushBack(rapidjson::Value(resizedBox.x), gtAlloc);
 			bbox.PushBack(rapidjson::Value(resizedBox.y), gtAlloc);
@@ -471,12 +464,40 @@ void SUNRGBDEval::onObjectDetection(ChannelRead<SUNRGBDEval::DetectionContainer>
 		} catch(std::runtime_error e) {
 			std::cout << e.what() << std::endl;
 		}
+
+		float maxIoU = 0;
+		std::pair<int, Detection> matchGT;
+		for(const auto& pair : gtDetections) {
+			const std::string& gtName = names[pair.first];
+			const auto iter = m_SUNRGBDName2COCOIDMap.find(gtName);
+			if(iter == m_SUNRGBDName2COCOIDMap.end() || iter->second != det.type) {
+				continue;
+			}
+
+			float iou2D = Detection::calcIoU(resizedBox, pair.second.box);
+			if(iou2D > maxIoU) {
+				maxIoU = iou2D;
+				matchGT = pair;
+			}
+		}
+
+		if(maxIoU <= 0) {
+			std::cout << "No match for: " << Detection::getTypeName(det.type) << std::endl;
+			continue;
+		}
+
+		std::cout << "Comparing " << Detection::getTypeName(det.type) << " with " << names[matchGT.first] << std::endl;
+
+		auto det2GT = det.pos - matchGT.second.pos;
+		float dist = det2GT.dot(det2GT);
+
+		m_rmsePerCategory[det.type].push_back(dist);
 	}
 
 	cv::imshow("Eval SUNRGBD", currentImg);
 }
 
-void SUNRGBDEval::writeJSONDocs() {
+void SUNRGBDEval::writeOutputs() {
 	rapidjson::OStreamWrapper gtFWS(m_gtOut);
 	rapidjson::Writer<rapidjson::OStreamWrapper> gtWriter(gtFWS);
 	m_gtDoc.Accept(gtWriter);
@@ -484,12 +505,50 @@ void SUNRGBDEval::writeJSONDocs() {
 	rapidjson::OStreamWrapper detFWS(m_detOut);
 	rapidjson::Writer<rapidjson::OStreamWrapper> detWriter(detFWS);
 	m_detDoc.Accept(detWriter);
+
+	rapidjson::Document rmseDoc;
+	rmseDoc.SetObject();
+
+	rapidjson::Document::AllocatorType& rmseAlloc = rmseDoc.GetAllocator();
+
+	for(const auto& pair : m_rmsePerCategory) {
+		rapidjson::Value dists(rapidjson::kArrayType);
+
+		for(auto dist : pair.second) {
+			dists.PushBack(rapidjson::Value().SetFloat(dist), rmseAlloc);
+		}
+
+		const std::string& category = Detection::getTypeName(pair.first);
+		rapidjson::Value catValue(category.c_str(), category.length(), rmseAlloc);
+		rmseDoc.AddMember(catValue, dists, rmseAlloc);
+	}
+
+	class StringHolder
+	  {
+	  public:
+		typedef char Ch;
+		StringHolder(std::string& s) : s_(s) { s_.reserve(4096); }
+		void Put(char c) { s_.push_back(c); }
+		void Flush() { return; }
+
+	  private:
+		std::string& s_;
+	  };
+
+	std::string out;
+	StringHolder rmseFWS(out);
+	rapidjson::Writer<StringHolder> rmseWriter(rmseFWS);
+	rmseDoc.Accept(rmseWriter);
+	std::ofstream rmseFile(m_path2DataSet + "/rmse.json");
+	rmseFile << out;
+	if(!rmseFile.good()) throw std::runtime_error("Cannot write to file");
+	rmseFile.close();
 }
 
 void SUNRGBDEval::addCategories() {
 	rapidjson::Document::AllocatorType& gtAlloc = m_gtDoc.GetAllocator();
 	rapidjson::Value categories(rapidjson::kArrayType);
-	for(const auto& pair : m_name2IDMap) {
+	for(const auto& pair : m_SUNRGBDName2COCOIDMap) {
 		rapidjson::Value cat(rapidjson::kObjectType);
 		cat.AddMember("supercategory", rapidjson::Value().SetString("SUNRGBD", 7), gtAlloc);
 		cat.AddMember("id", rapidjson::Value().SetInt(pair.second), gtAlloc);
@@ -501,23 +560,26 @@ void SUNRGBDEval::addCategories() {
 }
 
 int SUNRGBDEval::SUNRGBDname2typeID(const std::string& name) {
-	auto iter = m_name2IDMap.find(name);
-	if(iter == m_name2IDMap.end()) {
+	auto iter = m_SUNRGBDName2COCOIDMap.find(name);
+	if(iter == m_SUNRGBDName2COCOIDMap.end()) {
 		throw std::runtime_error("name not found: " + name);
 	}
 
 	return iter->second;
 }
 
-std::unordered_map<std::string, int> SUNRGBDEval::m_name2IDMap = {
+std::unordered_map<std::string, int> SUNRGBDEval::m_SUNRGBDName2COCOIDMap = {
+	{"bench", 15},
 	{"chair", 62},
 	{"bed", 65},
 	{"door", 71},
 	{"monitor", 72},
 	{"toilet", 70},
+	{"urinal", 70},
 	{"sink", 81},
 	{"sofa", 63},
 	{"table", 67},
+	{"dining_table", 67},
 	{"person", 1},
 	{"desk", 69},
 	{"flower_pot", 64},
@@ -525,7 +587,15 @@ std::unordered_map<std::string, int> SUNRGBDEval::m_name2IDMap = {
 	{"microwave", 78},
 	{"oven", 79},
 	{"fridge", 82},
-	{"tv", 72}
+	{"tv", 72},	// 0.237
+	{"book", 84},
+	{"mouse", 74},
+	{"plants", 64},
+	{"plant", 64},
+	{"flower_vase", 86}, // 0.233
+	{"sofa_chair", 62}, // 63 => 0.205, // 62 => 0.233
+	{"endtable", 67},
+	{"stool", 62},
 };
 
 ///////////////////////////////////////////////////////////////////////////////

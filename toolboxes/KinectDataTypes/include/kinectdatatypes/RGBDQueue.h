@@ -6,6 +6,7 @@
 
 #include <optional>
 #include <mutex>
+#include <condition_variable>
 #include <queue>
 
 #include <fw/ChannelReadWrite.h>
@@ -25,84 +26,82 @@ public:
 	RGBDQueue() {}
 
 	void push0(const TChannel0& img) {
-		std::lock_guard<std::mutex> guard(m_channel0Mutex);
+		std::unique_lock<std::mutex> lock(m_mutex);
 		m_channel0Queue.push(img);
+		dropTilID(m_channel1Queue, m_channel0Queue.front().sequenceID);
+		checkForPair();
+		lock.unlock();
+		m_condition.notify_one();
 	}
 	void push0(TChannel0&& img) {
-		std::lock_guard<std::mutex> guard(m_channel0Mutex);
+		std::unique_lock<std::mutex> lock(m_mutex);
 		m_channel0Queue.push(img);
+		dropTilID(m_channel1Queue, m_channel0Queue.front().sequenceID);
+		checkForPair();
+		lock.unlock();
+		m_condition.notify_one();
 	}
 
 	void push1(const TChannel1& img) {
-		std::lock_guard<std::mutex> guard(m_channel1Mutex);
+		std::unique_lock<std::mutex> lock(m_mutex);
 		m_channel1Queue.push(img);
+		dropTilID(m_channel0Queue, m_channel1Queue.front().sequenceID);
+		checkForPair();
+		lock.unlock();
+		m_condition.notify_one();
 	}
 	void push1(TChannel1&& img) {
-		std::lock_guard<std::mutex> guard(m_channel1Mutex);
+		std::unique_lock<std::mutex> lock(m_mutex);
 		m_channel1Queue.push(img);
+		dropTilID(m_channel0Queue, m_channel1Queue.front().sequenceID);
+		checkForPair();
+		lock.unlock();
+		m_condition.notify_one();
 	}
 
-	std::optional<ChannelPair> getNewestSyncedPair()  {
-		std::optional<ChannelPair> pair;
+	ChannelPair getNewestSyncedPair()  {
+		std::unique_lock lock(m_mutex);
 
-		// get frame number of front image
-		std::lock_guard guard0(m_channel0Mutex);
-		std::lock_guard guard1(m_channel1Mutex);
-		if(m_channel1Queue.empty() || m_channel0Queue.empty()) {
-			return pair;
+		m_condition.wait(lock, [this]{ return m_currentPair.has_value(); });
+
+		auto pair = m_currentPair;
+		m_currentPair = {};
+
+		return *pair;
+	}
+
+	template<typename TChannel>
+	static void dropTilID(std::queue<TChannel>& queue, size_t id) {
+		while(!queue.empty() && queue.front().sequenceID < id) {
+			std::cout << "No matching image. Dropping image. FrameNumber: " << queue.front().sequenceID << std::endl;
+			queue.pop();
 		}
-
-		bool skipping = false;
-		unsigned int prevSequenceID = 0;
-
-		while(!m_channel0Queue.empty() && !m_channel1Queue.empty()) {
-			// pop rgb images before next depth image
-			while(!m_channel0Queue.empty() && m_channel0Queue.front().sequenceID < m_channel1Queue.front().sequenceID) {
-				std::cout << "No matching depth image. Dropping RGB image. FrameNumber: " << m_channel0Queue.front().sequenceID << std::endl;
-				m_channel0Queue.pop();
-			}
-
-			if(m_channel0Queue.empty()) {
-				break;
-			}
-
-			// pop depth images before next rgb image
-			while(!m_channel1Queue.empty() && m_channel1Queue.front().sequenceID < m_channel0Queue.front().sequenceID) {
-				std::cout << "No matching rgb image. Dropping depth image. FrameNumber: " << m_channel1Queue.front().sequenceID << std::endl;
-				m_channel1Queue.pop();
-			}
-
-			if(m_channel1Queue.empty()) {
-				break;
-			}
-
-			if(m_channel0Queue.front().sequenceID != m_channel1Queue.front().sequenceID) {
-				continue;
-			}
-
-			pair = std::make_pair(m_channel0Queue.front(), m_channel1Queue.front());
-
-			// rgb and depth image should be synchronized and have same frame number now
-			assert(pair->first.sequenceID == pair->second.sequenceID);
-
-			m_channel0Queue.pop();
-			m_channel1Queue.pop();
-			if(skipping) {
-				std::cout << "Skipping frames: " << prevSequenceID << std::endl;
-			}
-			skipping = true;
-			prevSequenceID = pair->first.sequenceID;
-		}
-
-		return pair;
 	}
 
 private:
-	std::mutex	m_channel0Mutex;
-	std::mutex	m_channel1Mutex;
+	std::condition_variable	m_condition;
+	std::mutex				m_mutex;
 
 	std::queue<TChannel0>	m_channel0Queue;
 	std::queue<TChannel1>	m_channel1Queue;
+
+	std::optional<ChannelPair>	m_currentPair;
+
+private:
+	void checkForPair() {
+		if(m_channel0Queue.empty() || m_channel1Queue.empty() ||
+				m_channel0Queue.front().sequenceID != m_channel1Queue.front().sequenceID) {
+			return;
+		}
+
+		if(m_currentPair) {
+			std::cout << "Skipping pair. FrameNumber: " << m_currentPair->first.sequenceID << std::endl;
+		}
+
+		m_currentPair = std::make_pair(m_channel0Queue.front(), m_channel1Queue.front());
+		m_channel0Queue.pop();
+		m_channel1Queue.pop();
+	}
 };
 
 } // namespace kinectdatatypes

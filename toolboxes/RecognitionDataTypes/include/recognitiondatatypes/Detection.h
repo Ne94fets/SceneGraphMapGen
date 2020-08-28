@@ -30,6 +30,7 @@ public:
 
 	static cv::Rect2f boxOnImage(const cv::Size2i& imgSize, cv::Rect2f box);
 	static cv::Rect2f normalizeBox(const cv::Size2i& imgSize, cv::Rect2f box);
+	static double calcIoU(const cv::Rect2f b0, const cv::Rect2f b1);
 
 	static const std::string& getTypeName(int type);
 

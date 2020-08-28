@@ -175,8 +175,6 @@ void GraphMap::initialize() {
 	// add first room
 	addRoom(m_room);
 
-//	subscribe<DetectionContainer>("ObjectDetection", &GraphMap::onObjectDetection);
-//	subscribe<TransformType>("PCGlobalTransform", &GraphMap::onPoseEstimation);
 	m_syncQueue.subscribe(*this,
 						  "ObjectDetection",
 						  "ObjectDetectionNew",
@@ -184,48 +182,11 @@ void GraphMap::initialize() {
 						  &GraphMap::onSynchronized,
 						  this,
 						  Duration::seconds(10));
-
-//	if(!m_worker) {
-//		m_worker = new std::thread([this](){ process(); });
-//	}
 }
-
-//void GraphMap::onObjectDetection(ChannelRead<DetectionContainer> detections) {
-//	m_syncQueue.push0(detections);
-//	//	analyseDetections(detections->value());
-//}
-
-//void GraphMap::onObjectNewDetection(ChannelRead<GraphMap::DetectionContainer> detections) {
-//	m_newDetections.push(detections);
-//}
-
-//void GraphMap::onPoseEstimation(ChannelRead<GraphMap::TransformType> globalPose) {
-//	m_syncQueue.push1(globalPose);
-//}
 
 void GraphMap::onSynchronized(ChannelRead<GraphMap::DetectionContainer> detections, ChannelRead<GraphMap::DetectionContainer> detectionsNew, ChannelRead<GraphMap::TransformType> globalPose) {
 	analyseDetections(detections, detectionsNew, globalPose);
 }
-
-//void GraphMap::process() {
-//	while(!m_shutdown) {
-//		auto startTime = std::chrono::system_clock::now();
-
-//		const auto optionalPair = m_syncQueue.getNewestSyncedPair();
-//		if(!optionalPair) {
-//			std::this_thread::sleep_for(std::chrono::milliseconds(1));
-//			continue;
-//		}
-
-//		const auto& pair = *optionalPair;
-//		analyseDetections(pair.first, pair.second);
-
-//		auto endTime = std::chrono::system_clock::now();
-//		auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
-//		if(duration > 1000/30)
-//			std::cout << "GraphMap process took: " << duration << "ms" << std::endl;
-//	}
-//}
 
 void GraphMap::analyseDetections(const DetectionContainer& detections,
 								 const DetectionContainer& detectionsNew,

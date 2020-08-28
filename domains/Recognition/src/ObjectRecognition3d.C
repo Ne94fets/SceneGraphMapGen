@@ -93,8 +93,8 @@ namespace recognition {
 ObjectRecognition3d::ObjectRecognition3d() {
 	// TODO: further initialization of members, etc.{
 
-	// reserve memory for 10000 points used in calcPosition
-	m_calcPositionBuffer.reserve(100*100);
+	// reserve memory for size*size points used in calcPosition
+	m_calcPositionBuffer.reserve(m_sampleGridSize*m_sampleGridSize);
 }
 
 ObjectRecognition3d::~ObjectRecognition3d() {
@@ -195,19 +195,18 @@ void ObjectRecognition3d::onNewDepthImage(
 }
 
 void ObjectRecognition3d::process() {
+	while(!m_shutdown && !m_hasRegData) {
+		std::this_thread::sleep_for(std::chrono::milliseconds(1));
+	}
+
+	std::cout << "ObjectRecognition has registration data. Running in main loop now." << std::endl;
+
 	while(!m_shutdown) {
 
+		// wait for a matching pair
+		const auto pair = m_rgbdQueue.getNewestSyncedPair();
+
 		auto startTime = std::chrono::system_clock::now();
-
-		// sync queues and get a matching pair
-		const auto optionalPair = m_rgbdQueue.getNewestSyncedPair();
-		if(!optionalPair || !m_hasRegData) {
-			std::this_thread::sleep_for(std::chrono::milliseconds(1));
-			continue;
-		}
-
-		// got a pair
-		const auto& pair = *optionalPair;
 
 		// process the pair
 		processPair(pair);
@@ -221,20 +220,21 @@ void ObjectRecognition3d::process() {
 
 void ObjectRecognition3d::backgroundProcess() {
 	std::vector<long> durations;
+	DetectionContainer newDetections;
 	while(!m_shutdown) {
-		if(m_bgStatus == BackgroundStatus::WAITING ||
-				m_bgStatus == BackgroundStatus::DONE) {
-			std::this_thread::sleep_for(std::chrono::milliseconds(1));
-			continue;
-		}
-
 		std::vector<Detection> detections;
 
+		std::unique_lock<std::mutex> imageLock(m_detectionImageMutex);
+		m_bgCondition.wait(imageLock,
+						   [this]{ return m_bgStatus == BackgroundStatus::WORKING; });
+
 		auto startTime = std::chrono::system_clock::now();
-		{
-			std::lock_guard<std::mutex> imageGuard(m_detectionImageMutex);
-			detections = detect(m_detectionImage.first.value()[0]);
-		}
+
+		detections = detect(m_detectionImage.first.value()[0]);
+
+		// early unlocking
+		imageLock.unlock();
+
 		auto endTime = std::chrono::system_clock::now();
 		auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
 		durations.push_back(duration);
@@ -244,26 +244,31 @@ void ObjectRecognition3d::backgroundProcess() {
 		}
 
 		// set position and bbox, also put into new detections
-		m_detectionsNew.clear();
-		m_detectionsNew.reserve(detections.size());
+		newDetections.clear();
+		newDetections.reserve(detections.size());
 		size_t validCnt = 0;
 		for(auto& d : detections) {
 			if(d.confidence < m_confidenceThreshold) {
 				continue;
 			}
 			updateDetectionBox(d, m_detectionImage.second, d.box);
-			m_detectionsNew.push_back(d);
+			newDetections.push_back(d);
 			validCnt++;
 		}
 		detections.resize(validCnt);
 
-		// post new detections
 		auto wChannelNewDetections = m_channelNewDetections.write();
 		wChannelNewDetections->sequenceID = m_detectionImage.first.sequenceID;
-		wChannelNewDetections->value() = m_detectionsNew;
+		wChannelNewDetections->value() = newDetections;
+
+		assert(newDetections.size() == detections.size());
+		std::cout << "Posting " << wChannelNewDetections->value().size() << " new detections" << std::endl;
 
 		// swap empty background detections with detections
+		std::unique_lock<std::mutex> bgDetectionsLock(m_bgDetectionsMutex);
 		std::swap(m_bgDetections, detections);
+//		m_bgDetections = detections;
+		bgDetectionsLock.unlock();
 
 		float avg(0);
 		for(const auto d : durations) {
@@ -349,10 +354,12 @@ void ObjectRecognition3d::processPair(const ChannelPair& pair) {
 void ObjectRecognition3d::startDetection(const ChannelPair& pair) {
 	// only start if non is running
 	if(m_bgStatus == BackgroundStatus::WAITING) {
-		std::lock_guard<std::mutex> imageGuard(m_detectionImageMutex);
+		std::unique_lock<std::mutex> imageLock(m_detectionImageMutex);
 		m_detectionImage = pair;
 
 		m_bgStatus = BackgroundStatus::WORKING;
+		imageLock.unlock();
+		m_bgCondition.notify_one();
 	}
 }
 
@@ -360,14 +367,18 @@ void ObjectRecognition3d::trackLastDetections(const Stamped<ImgPyramid>& rgbImag
 											  const Stamped<DepthImgType>& depthImage) {
 	auto trackingStart = std::chrono::system_clock::now();
 
+	assert(m_detections.size() == m_trackers.size());
+
 	size_t validCnt = 0;
 	for(size_t i = 0; i < m_detections.size(); ++i) {
 		auto& d = m_detections[i];
+		const auto& tracker = m_trackers[i];
 		const auto& img = rgbImage.value()[d.pyramidLevel];
 		cv::Rect2d box;
 
 		auto trackingStart = std::chrono::system_clock::now();
-		bool trackSucess = m_trackers[i]->update(img, box);
+
+		bool trackSucess = tracker->update(img, box);
 		if(trackSucess && box.height > 0 && box.width > 0) {
 			auto trackingEnd = std::chrono::system_clock::now();
 			auto trackingDuration = std::chrono::duration_cast<std::chrono::milliseconds>(trackingEnd - trackingStart).count();
@@ -425,114 +436,120 @@ void ObjectRecognition3d::trackNewDetections(const Stamped<ImgPyramid>& rgbImage
 											 const Stamped<DepthImgType>& depthImage) {
 	auto trackingStart = std::chrono::system_clock::now();
 
+	std::unique_lock<std::mutex> bgDetectionsLock(m_bgDetectionsMutex, std::try_to_lock);
+
 	// return if the background process is still running
-	if(m_bgStatus != BackgroundStatus::DONE) {
+	if(m_bgStatus != BackgroundStatus::DONE || !bgDetectionsLock.owns_lock()) {
 		return;
 	}
 
 	// update new detections to current image
-	if(!m_bgDetections.empty()) {
+	if(m_bgDetections.empty()) {
+		m_bgStatus = BackgroundStatus::WAITING;
+		return;
+	}
 
 #if DEBUG_BG_FG_TRACKING
-		cv::Mat backgroundImage = m_detectionImage.first.value()[0];
-		cv::Mat currentImage = rgbImage.value()[0];
+	cv::Mat backgroundImage = m_detectionImage.first.value()[0];
+	cv::Mat currentImage = rgbImage.value()[0];
 #endif
 
-		// add more trackers if needed
-		m_bgTrackers.reserve(m_bgDetections.size());
-		for(size_t i = m_bgTrackers.size(); i < m_bgDetections.size(); ++i) {
-//			m_bgTrackers.push_back(TrackerGenerator::createKCFHOG());
-			m_bgTrackers.push_back(cv::TrackerKCF::create());
+	// add more trackers if needed
+	m_bgTrackers.reserve(m_bgDetections.size());
+	for(size_t i = m_bgTrackers.size(); i < m_bgDetections.size(); ++i) {
+//		m_bgTrackers.push_back(TrackerGenerator::createKCFHOG());
+		m_bgTrackers.push_back(cv::TrackerKCF::create());
+	}
+
+	assert(m_bgDetections.size() <= m_bgTrackers.size());
+
+	size_t validCnt = 0;
+	for(size_t i = 0; i < m_bgDetections.size(); ++i) {
+
+#if DEBUG_BG_FG_TRACKING
+		cv::Scalar colors[] = {{255,0,0},
+							   {0,255,0},
+							   {0,0,255},
+							   {255,255,0},
+							   {255,0,255},
+							   {0,255,255}};
+		cv::Scalar& color = colors[i % 6];
+#endif
+		auto& d = m_bgDetections[i];
+
+		// determine pyramid level from box size
+		d.pyramidLevel = calcPyramidLevel(d.box);
+
+		// get detection image
+		const auto& detectionImage = m_detectionImage.first.value()[d.pyramidLevel];
+		auto shortTermTracker = cv::TrackerMedianFlow::create();
+
+		cv::Rect2d box = Detection::boxOnImage(detectionImage.size(), d.box);
+
+		shortTermTracker->init(detectionImage, box);
+
+#if DEBUG_BG_FG_TRACKING
+		{
+			cv::Rect2d debug = Detection::boxOnImage(m_currentRGBMarked.size(), d.box);
+			cv::rectangle(static_cast<cv::Mat>(m_currentRGBMarked), debug, cv::Scalar(255, 0, 255), 4);
+			cv::rectangle(backgroundImage, debug, color, 4);
 		}
-
-		size_t validCnt = 0;
-		for(size_t i = 0; i < m_bgDetections.size(); ++i) {
-
-#if DEBUG_BG_FG_TRACKING
-			cv::Scalar colors[] = {{255,0,0},
-								   {0,255,0},
-								   {0,0,255},
-								   {255,255,0},
-								   {255,0,255},
-								   {0,255,255}};
-			cv::Scalar& color = colors[i % 6];
-#endif
-			auto& d = m_bgDetections[i];
-
-			// determine pyramid level from box size
-			d.pyramidLevel = calcPyramidLevel(d.box);
-
-			// get detection image
-			const auto& detectionImage = m_detectionImage.first.value()[d.pyramidLevel];
-			auto shortTermTracker = cv::TrackerMedianFlow::create();
-
-			cv::Rect2d box = Detection::boxOnImage(detectionImage.size(), d.box);
-
-			shortTermTracker->init(detectionImage, box);
-
-#if DEBUG_BG_FG_TRACKING
-			{
-				cv::Rect2d debug = Detection::boxOnImage(m_currentRGBMarked.size(), d.box);
-				cv::rectangle(static_cast<cv::Mat>(m_currentRGBMarked), debug, cv::Scalar(255, 0, 255), 4);
-				cv::rectangle(backgroundImage, debug, color, 4);
-			}
 #endif
 
-			// get current image
-			const auto& img = rgbImage.value()[d.pyramidLevel];
+		// get current image
+		const auto& img = rgbImage.value()[d.pyramidLevel];
 
-			// try to track to current image
-			cv::Rect2d trackedBox;
-			if(!shortTermTracker->update(img, trackedBox)) {
-				continue;
-			}
-
-#if DEBUG_BG_FG_TRACKING
-			{
-				auto normalized = Detection::normalizeBox(img.size(), trackedBox);
-				cv::Rect2d debug = Detection::boxOnImage(m_currentRGBMarked.size(), normalized);
-				cv::rectangle(static_cast<cv::Mat>(m_currentRGBMarked), debug, cv::Scalar(0, 255, 255), 4);
-				cv::rectangle(currentImage, debug, color, 4);
-			}
-#endif
-
-			// clamp box
-			trackedBox = clampRect(img, trackedBox);
-
-			// if clamped box too small discard it
-			if(trackedBox.width < 1 || trackedBox.height < 1) {
-				continue;
-			}
-
-			// init faster, better KCF tracker
-			m_bgTrackers[i]->init(img, trackedBox);
-
-			// update detection
-			auto normalized = Detection::normalizeBox(img.size(), trackedBox);
-			updateDetectionBox(d, depthImage, normalized);
-
-			// swap detection and tracker to front
-			std::swap(m_bgDetections[validCnt], m_bgDetections[i]);
-			std::swap(m_bgTrackers[validCnt], m_bgTrackers[i]);
-			validCnt++;
+		// try to track to current image
+		cv::Rect2d trackedBox;
+		if(!shortTermTracker->update(img, trackedBox)) {
+			continue;
 		}
 
 #if DEBUG_BG_FG_TRACKING
 		{
-			cv::Mat concatMat(backgroundImage.rows, backgroundImage.cols + currentImage.cols, backgroundImage.type());
-			backgroundImage.copyTo(concatMat(cv::Rect(0, 0, backgroundImage.cols, backgroundImage.rows)));
-			currentImage.copyTo(concatMat(cv::Rect(backgroundImage.cols, 0, currentImage.cols, currentImage.rows)));
-			cv::imshow("Background detect", concatMat);
+			auto normalized = Detection::normalizeBox(img.size(), trackedBox);
+			cv::Rect2d debug = Detection::boxOnImage(m_currentRGBMarked.size(), normalized);
+			cv::rectangle(static_cast<cv::Mat>(m_currentRGBMarked), debug, cv::Scalar(0, 255, 255), 4);
+			cv::rectangle(currentImage, debug, color, 4);
 		}
 #endif
 
-		// delete lost trackers
-		m_bgDetections.resize(validCnt);
-		m_bgTrackers.resize(validCnt);
+		// clamp box
+		trackedBox = clampRect(img, trackedBox);
 
-		// move new trackers to foreground trackers
-		matchDetectionsIndependentGreedy(rgbImage);
+		// if clamped box too small discard it
+		if(trackedBox.width < 1 || trackedBox.height < 1) {
+			continue;
+		}
+
+		// init faster, better KCF tracker
+		m_bgTrackers[i]->init(img, trackedBox);
+
+		// update detection
+		auto normalized = Detection::normalizeBox(img.size(), trackedBox);
+		updateDetectionBox(d, depthImage, normalized);
+
+		// swap detection and tracker to front
+		std::swap(m_bgDetections[validCnt], m_bgDetections[i]);
+		std::swap(m_bgTrackers[validCnt], m_bgTrackers[i]);
+		validCnt++;
 	}
+
+#if DEBUG_BG_FG_TRACKING
+	{
+		cv::Mat concatMat(backgroundImage.rows, backgroundImage.cols + currentImage.cols, backgroundImage.type());
+		backgroundImage.copyTo(concatMat(cv::Rect(0, 0, backgroundImage.cols, backgroundImage.rows)));
+		currentImage.copyTo(concatMat(cv::Rect(backgroundImage.cols, 0, currentImage.cols, currentImage.rows)));
+		cv::imshow("Background detect", concatMat);
+	}
+#endif
+
+	// delete lost trackers
+	m_bgDetections.resize(validCnt);
+//		m_bgTrackers.resize(validCnt);
+
+	// move new trackers to foreground trackers
+	matchDetectionsIndependentGreedy(rgbImage);
 
 	m_bgStatus = BackgroundStatus::WAITING;
 
@@ -546,14 +563,17 @@ void ObjectRecognition3d::matchDetectionsIndependentGreedy(
 		const Stamped<ImgPyramid>& rgbImage) {
 	m_trackers.reserve(m_trackers.size() + m_bgTrackers.size());
 	m_detections.reserve(m_detections.size() + m_bgDetections.size());
-	m_detectionsNew.reserve(m_bgDetections.size());
 
-	for(size_t i = 0; i < m_bgTrackers.size(); ++i) {
-		const auto& bgT = m_bgTrackers[i];
+	assert(m_bgDetections.size() <= m_bgTrackers.size());
+
+	size_t notMovedToActiveCnt = 0;
+	for(size_t i = 0; i < m_bgDetections.size(); ++i) {
 		auto& bgD = m_bgDetections[i];
+		const auto& bgT = m_bgTrackers[i];
 		const auto& img = rgbImage.value()[bgD.pyramidLevel];
 
 		assert(bgD.box.width > 0 && bgD.box.height > 0);
+		assert(m_detections.size() == m_trackers.size());
 
 		cv::Tracker* fgT = nullptr;
 		Detection* fgD = nullptr;
@@ -567,21 +587,24 @@ void ObjectRecognition3d::matchDetectionsIndependentGreedy(
 				fgT = m_trackers[j];
 			}
 		}
+
 		// insert if not overlapping too much with an active detection
 		if(maxOverlap < m_overlappingThreshold) {
 			bgD.uuid = boost::uuids::random_generator()();
 			m_trackers.push_back(bgT);
 			m_detections.push_back(bgD);
-			m_detectionsNew.push_back(bgD);
 		} else {	// update if overlapping much
 //			updateDetection(*fgD, bgD);
 //			cv::Rect2d box = Detection::boxOnImage(img.size(), fgD->box);
 //			fgT->init(img, box);
+			std::swap(m_bgTrackers[notMovedToActiveCnt], m_bgTrackers[i]);
+			notMovedToActiveCnt++;
 		}
 	}
 
 	// detections and trackers moved to foreground or updated foreground
 	m_bgDetections.clear();
+	m_bgTrackers.resize(notMovedToActiveCnt);
 //	m_bgTrackers.clear();
 }
 
@@ -665,12 +688,12 @@ cv::Point3f ObjectRecognition3d::calcPosition(const ObjectRecognition3d::DepthIm
 	int xmax = rrect.br().x;
 
 	// do not use full resolution since depth image is upscaled
-	// sample with a 100x100 grid
+	// sample with a m_sampleGridSize*m_sampleGridSize grid
 	// ensure minimal step width of 1
-	int yStep = std::max((ymax - ymin) / 100, 1);
-	int xStep = std::max((xmax - xmin) / 100, 1);
+	int yStep = std::max((ymax - ymin) / m_sampleGridSize, 1);
+	int xStep = std::max((xmax - xmin) / m_sampleGridSize, 1);
 
-	// do not always allocat and reserve memory
+	// do not always allocate and reserve memory
 	m_calcPositionBuffer.clear();
 	for(int r = ymin; r < ymax; r+=yStep) {
 		for(int c = xmin; c < xmax; c+=xStep) {

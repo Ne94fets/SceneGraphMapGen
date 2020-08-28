@@ -36,6 +36,11 @@ cv::Rect2f Detection::normalizeBox(const cv::Size2i& imgSize, cv::Rect2f box) {
 					  box.height / imgSize.height);
 }
 
+double Detection::calcIoU(const cv::Rect2f b0, const cv::Rect2f b1) {
+	double unionArea = (b0 & b1).area();
+	return unionArea / (b0.area() + b1.area() - unionArea);
+}
+
 const std::string& Detection::getTypeName(int type) {
 	auto iter = m_lookupMap.find(type);
 	if(iter == m_lookupMap.end())

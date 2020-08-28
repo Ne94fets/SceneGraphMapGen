@@ -373,18 +373,18 @@ void PointCloudRegistration::visualize() {
 }
 
 void PointCloudRegistration::process() {
+	while(!m_shutdown && !m_hasKinectRegData) {
+		std::this_thread::sleep_for(std::chrono::milliseconds(1));
+	}
+
+	std::cout << "PointCloudRegistration has registration data. Running in main loop now." << std::endl;
+
 	while(!m_shutdown) {
+
+		// wait for a matching pair
+		const auto pair = m_rgbdQueue.getNewestSyncedPair();
+
 		auto startTime = std::chrono::system_clock::now();
-
-		// sync queues and get a matching pair
-		const auto optionalPair = m_rgbdQueue.getNewestSyncedPair();
-		if(!optionalPair || !m_hasKinectRegData) {
-			std::this_thread::sleep_for(std::chrono::milliseconds(1));
-			continue;
-		}
-
-		// got a pair
-		const auto& pair = *optionalPair;
 
 		// process the pair
 		processPair(pair);
