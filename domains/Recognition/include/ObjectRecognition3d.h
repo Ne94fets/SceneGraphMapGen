@@ -124,10 +124,8 @@ private:
 
 	void processPair(const ChannelPair& pair);
 	void startDetection(const ChannelPair& pair);
-	void trackLastDetections(const Stamped<ImgPyramid>& rgbImage,
-							 const Stamped<DepthImgType>& depthImage);
-	void trackNewDetections(const Stamped<ImgPyramid>& rgbImage,
-							const Stamped<DepthImgType>& depthImage);
+	void trackLastDetections(const ChannelPair& pair);
+	void trackNewDetections(const ChannelPair& pair);
 
 	void matchDetectionsIndependentGreedy(const Stamped<ImgPyramid>& rgbImage);
 
@@ -138,16 +136,16 @@ private:
 	Detection	readDetection(const std::vector<tf::Tensor>& outputs, int32_t idx);
 
 	void	updateDetection(Detection& toUpdate, const Detection& data);
-	void	updateDetectionBox(Detection& d, const DepthImgType& depth, const cv::Rect2f& box);
+	void	updateDetectionBox(Detection& d, const ChannelPair& pair, const cv::Rect2f& box);
 
 	size_t				calcPyramidLevel(const cv::Rect2f& box);
-	cv::Point3f			calcPosition(const DepthImgType& depthImg, const cv::Rect2f& rect);
-	void				calcBBox(Detection& d, const DepthImgType& depthImage, const cv::Rect2f& box);
+	cv::Point3f			calcPosition(const ChannelPair& pair, const cv::Rect2f& rect);
+	void				calcBBox(Detection& d, const ChannelPair& pair, const cv::Rect2f& box);
 	float				overlapPercentage(const cv::Rect2f& r0, const cv::Rect2f& r1);
 	DetectionContainer	readDetections(const std::vector<tf::Tensor>& outputs,
-									   const Stamped<DepthImgType>& depthImage);
+									   const ChannelPair& pair);
 
-	std::vector<Detection> detect(const RGBImgType& rgbImage);
+	std::vector<Detection> detect(const ChannelPair& pair);
 
 	// void onPoseChanged(ChannelRead<Pose2> pose);
 
@@ -171,6 +169,7 @@ private:
 	RGBImgType						m_currentRGBMarked;
 	Channel<RGBImgType>				m_channelRGBMarked;
 	Channel<DetectionContainer>		m_channelDetections;
+	Channel<DetectionContainer>		m_channelNetDetections;
 	Channel<DetectionContainer>		m_channelNewDetections;
 	Channel<DetectionContainer>		m_channelLostDetections;
 
@@ -199,7 +198,6 @@ private:
 	std::vector<cv::Ptr<cv::Tracker>>	m_bgTrackers;
 
 	DetectionContainer					m_detections;
-	DetectionContainer					m_detectionsLost;
 	std::vector<cv::Ptr<cv::Tracker>>	m_trackers;
 };
 

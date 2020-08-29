@@ -78,7 +78,7 @@ using pcl::visualization::PointCloudColorHandlerCustom;
 using kinectdatatypes::RGBDOperations;
 
 #define DEBUG_MATCHES 0
-#define DEBUG_POINT_CLOUD 1
+#define DEBUG_POINT_CLOUD 0
 
 using namespace mira;
 using namespace pcl;
@@ -366,7 +366,7 @@ void PointCloudRegistration::visualize() {
 			visualizer->setCameraPosition(currentPos.x() + back.x(), currentPos.y() + back.y(), currentPos.z() + back.z(),
 											view.x(), view.y(), view.z(),
 											up.x(), up.y(), up.z());
-			visualizer->setCameraFieldOfView(80.f/180.f*M_PI, vpKeypoint);
+			visualizer->setCameraFieldOfView(60.f/180.f*M_PI, vpKeypoint);
 		}
 		visualizer->spinOnce(100);
 	}

@@ -169,7 +169,7 @@ void SUNRGBDEval::initialize() {
 	m_channelRGBFull = publish<RGBImgType>("RGBImageFull");
 	m_channelDepthFull = publish<DepthImgType>("DepthImageFull");
 
-	subscribe<DetectionContainer>("ObjectDetectionNew", &SUNRGBDEval::onObjectDetection);
+	subscribe<DetectionContainer>("ObjectDetectionNet", &SUNRGBDEval::onObjectDetection);
 }
 
 void SUNRGBDEval::process(const Timer& timer) {

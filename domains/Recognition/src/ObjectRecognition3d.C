@@ -66,8 +66,8 @@ using kinectdatatypes::RGBDOperations;
 #include <recognitiondatatypes/TrackerGenerator.h>
 using recognitiondatatypes::TrackerGenerator;
 
-#define DEBUG_POS_SAMPLING 0
-#define DEBUG_BG_FG_TRACKING 1
+#define DEBUG_POS_SAMPLING 1
+#define DEBUG_BG_FG_TRACKING 0
 
 namespace tf = tensorflow;
 
@@ -143,6 +143,7 @@ void ObjectRecognition3d::initialize() {
 	//mChannel = publish<Img<>>("Image");
 	m_channelRGBMarked = publish<RGBImgType>("RGBImageMarked");
 	m_channelDetections = publish<DetectionContainer>("ObjectDetection");
+	m_channelNetDetections = publish<DetectionContainer>("ObjectDetectionNet");
 	m_channelNewDetections = publish<DetectionContainer>("ObjectDetectionNew");
 	m_channelLostDetections = publish<DetectionContainer>("ObjectDetectionLost");
 
@@ -230,7 +231,7 @@ void ObjectRecognition3d::backgroundProcess() {
 
 		auto startTime = std::chrono::system_clock::now();
 
-		detections = detect(m_detectionImage.first.value()[0]);
+		detections = detect(m_detectionImage);
 
 		// early unlocking
 		imageLock.unlock();
@@ -244,25 +245,23 @@ void ObjectRecognition3d::backgroundProcess() {
 		}
 
 		// set position and bbox, also put into new detections
+		auto wChannelNewDetections = m_channelNetDetections.write();
+		wChannelNewDetections->sequenceID = m_detectionImage.first.sequenceID;
+		DetectionContainer& newDetections = wChannelNewDetections->value();
 		newDetections.clear();
 		newDetections.reserve(detections.size());
 		size_t validCnt = 0;
-		for(auto& d : detections) {
+		for(size_t i = 0; i < detections.size(); ++i) {
+			auto& d = detections[i];
 			if(d.confidence < m_confidenceThreshold) {
 				continue;
 			}
-			updateDetectionBox(d, m_detectionImage.second, d.box);
 			newDetections.push_back(d);
-			validCnt++;
+			detections[validCnt++] = d;
 		}
 		detections.resize(validCnt);
 
-		auto wChannelNewDetections = m_channelNewDetections.write();
-		wChannelNewDetections->sequenceID = m_detectionImage.first.sequenceID;
-		wChannelNewDetections->value() = newDetections;
-
 		assert(newDetections.size() == detections.size());
-		std::cout << "Posting " << wChannelNewDetections->value().size() << " new detections" << std::endl;
 
 		// swap empty background detections with detections
 		std::unique_lock<std::mutex> bgDetectionsLock(m_bgDetectionsMutex);
@@ -286,17 +285,14 @@ void ObjectRecognition3d::processPair(const ChannelPair& pair) {
 	const Stamped<DepthImgType>& depthImage = pair.second;
 	rgbImage[0].getMat().copyTo(m_currentRGBMarked);
 
-	// clear lost detections
-	m_detectionsLost.clear();
-
 	// start a new detection thread if none is running
 	startDetection(pair);
 
 	// track last detections
-	trackLastDetections(rgbImage, depthImage);
+	trackLastDetections(pair);
 
 	// join and clean up old thread if possible and get detections
-	trackNewDetections(rgbImage, depthImage);
+	trackNewDetections(pair);
 
 	// draw detections to an debug output image
 	for(const auto& d : m_detections) {
@@ -345,10 +341,6 @@ void ObjectRecognition3d::processPair(const ChannelPair& pair) {
 	wChannelDetections->sequenceID = pair.first.sequenceID;
 	wChannelDetections->value() = m_detections;
 
-	auto wChannelLostDetections = m_channelLostDetections.write();
-	wChannelLostDetections->sequenceID = pair.first.sequenceID;
-	wChannelLostDetections->value() = m_detectionsLost;
-
 }
 
 void ObjectRecognition3d::startDetection(const ChannelPair& pair) {
@@ -363,8 +355,9 @@ void ObjectRecognition3d::startDetection(const ChannelPair& pair) {
 	}
 }
 
-void ObjectRecognition3d::trackLastDetections(const Stamped<ImgPyramid>& rgbImage,
-											  const Stamped<DepthImgType>& depthImage) {
+void ObjectRecognition3d::trackLastDetections(const ChannelPair& pair) {
+	const Stamped<ImgPyramid>& rgbImage = pair.first;
+	const Stamped<DepthImgType>& depthImage = pair.second;
 	auto trackingStart = std::chrono::system_clock::now();
 
 	assert(m_detections.size() == m_trackers.size());
@@ -396,7 +389,7 @@ void ObjectRecognition3d::trackLastDetections(const Stamped<ImgPyramid>& rgbImag
 
 			// update detection
 			auto normalized = Detection::normalizeBox(img.size(), box);
-			updateDetectionBox(d, depthImage, normalized);
+			updateDetectionBox(d, pair, normalized);
 
 			// swap detection and tracker to front
 			std::swap(m_detections[validCnt], m_detections[i]);
@@ -419,8 +412,12 @@ void ObjectRecognition3d::trackLastDetections(const Stamped<ImgPyramid>& rgbImag
 	// move lost trackers to bg trackers and use them again
 	m_bgTrackers.insert(m_bgTrackers.end(), m_trackers.begin() + validCnt, m_trackers.end());
 
-	// move lost detections to lostDetections
-	m_detectionsLost.insert(m_detectionsLost.end(), m_detections.begin() + validCnt, m_detections.end());
+	// post lost detections
+	auto wChannelLostDetections = m_channelLostDetections.write();
+	wChannelLostDetections->sequenceID = rgbImage.sequenceID;
+	DetectionContainer& detectionsLost = wChannelLostDetections->value();
+	detectionsLost.clear();
+	detectionsLost.insert(detectionsLost.begin(), m_detections.begin() + validCnt, m_detections.end());
 
 	// remove lost detections and thier trackers from active detections
 	m_detections.resize(validCnt);
@@ -432,8 +429,10 @@ void ObjectRecognition3d::trackLastDetections(const Stamped<ImgPyramid>& rgbImag
 		std::cout << "Tracking " << m_trackers.size() << " active detections took: " << trackingDuration << "ms" << std::endl;
 }
 
-void ObjectRecognition3d::trackNewDetections(const Stamped<ImgPyramid>& rgbImage,
-											 const Stamped<DepthImgType>& depthImage) {
+void ObjectRecognition3d::trackNewDetections(const ChannelPair& pair) {
+	const Stamped<ImgPyramid>& rgbImage = pair.first;
+	const Stamped<DepthImgType>& depthImage = pair.second;
+
 	auto trackingStart = std::chrono::system_clock::now();
 
 	std::unique_lock<std::mutex> bgDetectionsLock(m_bgDetectionsMutex, std::try_to_lock);
@@ -527,7 +526,7 @@ void ObjectRecognition3d::trackNewDetections(const Stamped<ImgPyramid>& rgbImage
 
 		// update detection
 		auto normalized = Detection::normalizeBox(img.size(), trackedBox);
-		updateDetectionBox(d, depthImage, normalized);
+		updateDetectionBox(d, pair, normalized);
 
 		// swap detection and tracker to front
 		std::swap(m_bgDetections[validCnt], m_bgDetections[i]);
@@ -564,6 +563,13 @@ void ObjectRecognition3d::matchDetectionsIndependentGreedy(
 	m_trackers.reserve(m_trackers.size() + m_bgTrackers.size());
 	m_detections.reserve(m_detections.size() + m_bgDetections.size());
 
+	// post new tracked detections
+	auto wChannelNewDetections = m_channelNewDetections.write();
+	wChannelNewDetections->sequenceID = rgbImage.sequenceID;
+	DetectionContainer& detectionsNew = wChannelNewDetections->value();
+	detectionsNew.clear();
+	detectionsNew.reserve(m_bgDetections.size());
+
 	assert(m_bgDetections.size() <= m_bgTrackers.size());
 
 	size_t notMovedToActiveCnt = 0;
@@ -593,6 +599,7 @@ void ObjectRecognition3d::matchDetectionsIndependentGreedy(
 			bgD.uuid = boost::uuids::random_generator()();
 			m_trackers.push_back(bgT);
 			m_detections.push_back(bgD);
+			detectionsNew.push_back(bgD);
 		} else {	// update if overlapping much
 //			updateDetection(*fgD, bgD);
 //			cv::Rect2d box = Detection::boxOnImage(img.size(), fgD->box);
@@ -604,8 +611,8 @@ void ObjectRecognition3d::matchDetectionsIndependentGreedy(
 
 	// detections and trackers moved to foreground or updated foreground
 	m_bgDetections.clear();
-	m_bgTrackers.resize(notMovedToActiveCnt);
-//	m_bgTrackers.clear();
+//	m_bgTrackers.resize(notMovedToActiveCnt);
+	m_bgTrackers.clear();
 }
 
 int32_t ObjectRecognition3d::readNumDetections(const std::vector<tensorflow::Tensor>& outputs) {
@@ -652,12 +659,12 @@ void ObjectRecognition3d::updateDetection(ObjectRecognition3d::Detection& toUpda
 	}
 }
 
-void ObjectRecognition3d::updateDetectionBox(Detection& d, const DepthImgType& depth, const cv::Rect2f& box) {
+void ObjectRecognition3d::updateDetectionBox(Detection& d, const ChannelPair& pair, const cv::Rect2f& box) {
 	assert(box.width > 0 && box.height > 0);
 
 	d.box = box;
-	d.pos = calcPosition(depth, box);
-	calcBBox(d, depth, box);
+	d.pos = calcPosition(pair, box);
+	calcBBox(d, pair, box);
 }
 
 size_t ObjectRecognition3d::calcPyramidLevel(const cv::Rect2f& box) {
@@ -672,32 +679,42 @@ size_t ObjectRecognition3d::calcPyramidLevel(const cv::Rect2f& box) {
 	return 0;
 }
 
-cv::Point3f ObjectRecognition3d::calcPosition(const ObjectRecognition3d::DepthImgType& depthImg,
+cv::Point3f ObjectRecognition3d::calcPosition(const ChannelPair& pair,
 											  const cv::Rect2f& rect) {
 
 	assert(rect.width >= 0 &&
 		   rect.height >= 0);
 
-	cv::Rect2i rrect = Detection::boxOnImage(depthImg.size(), rect);
-	rrect = clampRect(depthImg, rrect);
+	const auto& rgbImage = pair.first[0];
+	const auto& depthImage = pair.second;
+
+	cv::Rect2i rrect = Detection::boxOnImage(rgbImage.size(), rect);
+
+	// depth image has one extra line at beginning and end
+	rrect = clampRect(rgbImage, rrect);
+	rrect.y += 1;
 
 	// get array of depths for region of intererst.
-	int ymin = rrect.y;
-	int ymax = rrect.br().y;
+	auto br = rrect.br();
 	int xmin = rrect.x;
-	int xmax = rrect.br().x;
+	int ymin = rrect.y;
+	int xmax = br.x;
+	int ymax = br.y;
 
 	// do not use full resolution since depth image is upscaled
 	// sample with a m_sampleGridSize*m_sampleGridSize grid
 	// ensure minimal step width of 1
-	int yStep = std::max((ymax - ymin) / m_sampleGridSize, 1);
-	int xStep = std::max((xmax - xmin) / m_sampleGridSize, 1);
+	float xStep = std::max(float(xmax - xmin) / m_sampleGridSize, 1.f);
+	float yStep = std::max(float(ymax - ymin) / m_sampleGridSize, 1.f);
 
 	// do not always allocate and reserve memory
 	m_calcPositionBuffer.clear();
-	for(int r = ymin; r < ymax; r+=yStep) {
-		for(int c = xmin; c < xmax; c+=xStep) {
-			float depth = depthImg(c, r);
+	for(float fr = ymin; fr < ymax; fr+=yStep) {
+		int r = static_cast<int>(fr);
+		const float* depthRow = depthImage[r];
+		for(float fc = xmin; fc < xmax; fc+=xStep) {
+			int c = static_cast<int>(fc);
+			float depth = depthRow[c];
 			if(std::isfinite(depth) && depth > 0)
 				m_calcPositionBuffer.push_back({c, r, depth});
 		}
@@ -724,7 +741,9 @@ cv::Point3f ObjectRecognition3d::calcPosition(const ObjectRecognition3d::DepthIm
 		std::tie(c, r, depth) = m_calcPositionBuffer[i];
 		if(RGBDOperations::getXYZ(r, c, depth, cx, cy, fracfx, fracfy, out)) {
 #if DEBUG_POS_SAMPLING
-			m_currentRGBMarked(c,r) = RGBImgType::Pixel(255, 255, 0);
+			assert(0 <= c && c < m_currentRGBMarked.width() &&
+				   0 <= r-1 && r-1 < m_currentRGBMarked.height());
+			m_currentRGBMarked(c,r-1) = RGBImgType::Pixel(255, 255, 0);
 #endif
 			center += out;
 		}
@@ -734,8 +753,9 @@ cv::Point3f ObjectRecognition3d::calcPosition(const ObjectRecognition3d::DepthIm
 	return center;
 }
 
-void ObjectRecognition3d::calcBBox(ObjectRecognition3d::Detection& d, const ObjectRecognition3d::DepthImgType& depthImage, const cv::Rect2f& box) {
-	cv::Rect2f imgBox = Detection::boxOnImage(depthImage.size(), box);
+void ObjectRecognition3d::calcBBox(ObjectRecognition3d::Detection& d, const ChannelPair& pair, const cv::Rect2f& box) {
+	const auto& rgbImage = pair.first[0];
+	cv::Rect2f imgBox = Detection::boxOnImage(rgbImage.size(), box);
 
 	// scale depth to depth image
 	float depth = d.pos.y * 1000;
@@ -791,7 +811,7 @@ float ObjectRecognition3d::overlapPercentage(const cv::Rect2f& r0, const cv::Rec
 
 ObjectRecognition3d::DetectionContainer ObjectRecognition3d::readDetections(
 		const std::vector<tensorflow::Tensor>& outputs,
-		const Stamped<DepthImgType>& depthImage) {
+		const ChannelPair& pair) {
 	DetectionContainer detections;
 
 	int32_t numDetections = readNumDetections(outputs);
@@ -803,7 +823,7 @@ ObjectRecognition3d::DetectionContainer ObjectRecognition3d::readDetections(
 		Detection d = readDetection(outputs, i);
 
 		// update values dependend on new box
-		updateDetectionBox(d, depthImage, d.box);
+		updateDetectionBox(d, pair, d.box);
 
 		// save detection to array and post it to channel
 		detections.push_back(d);
@@ -812,11 +832,9 @@ ObjectRecognition3d::DetectionContainer ObjectRecognition3d::readDetections(
 	return detections;
 }
 
-std::vector<ObjectRecognition3d::Detection> ObjectRecognition3d::detect(
-		const ObjectRecognition3d::RGBImgType& rgbImage) {
+std::vector<ObjectRecognition3d::Detection> ObjectRecognition3d::detect(const ChannelPair& pair) {
+	auto& rgbImage = pair.first[0];
 	auto imgSize = rgbImage.size();
-
-	std::vector<Detection> detections;
 
 	tf::Tensor inTensor(tf::DataType::DT_UINT8,
 						tf::TensorShape({1, imgSize.height(), imgSize.width(), 3}),
@@ -845,15 +863,7 @@ std::vector<ObjectRecognition3d::Detection> ObjectRecognition3d::detect(
 		std::cout << status.ToString() << "\n";
 	}
 
-	int32_t numDetections = readNumDetections(outputs);
-	assert(numDetections >= 0);
-	detections.reserve(static_cast<size_t>(numDetections));
-
-	for(int32_t i = 0; i < numDetections; ++i) {
-		detections.push_back(readDetection(outputs, i));
-	}
-
-	return detections;
+	return readDetections(outputs, pair);
 }
 
 cv::Rect2d ObjectRecognition3d::clampRect(const Img<>& image, const cv::Rect2d& rect) {

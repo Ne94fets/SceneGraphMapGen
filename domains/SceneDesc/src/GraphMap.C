@@ -102,26 +102,17 @@ protected:
 
 private:
 
-//	void onObjectDetection(ChannelRead<DetectionContainer> detections);
-//	void onObjectNewDetection(ChannelRead<DetectionContainer> detections);
-//	void onPoseEstimation(ChannelRead<TransformType> globalPose);
-
 	void onSynchronized(ChannelRead<DetectionContainer> detections,
 						ChannelRead<DetectionContainer> detectionsNew,
 						ChannelRead<TransformType> globalPose);
-	// void onPoseChanged(ChannelRead<Pose2> pose);
-
-	// void setPose(const Pose2& pose
-
-//	void process();
 
 	void analyseDetections(const DetectionContainer& detections,
 						   const DetectionContainer& detectionsNew,
 						   const TransformType& globalTransform);
 
-	bool existsObject(const Detection& d);
+	bool existsObject(const Detection& d, const boost::uuids::uuid& room);
 	bool existsObjectDBuuid(const Detection& d);
-	bool existsObjectWithin(double minx, double maxx, double miny, double maxy, double minz, double maxz);
+	bool existsObjectWithin(double minx, double maxx, double miny, double maxy, double minz, double maxz, const boost::uuids::uuid& room, const Detection& d);
 	void addRoom(const boost::uuids::uuid& room);
 	void addObject(const Detection& d, const boost::uuids::uuid& room);
 	void addRelation(const Detection& d, const Detection& other, cv::Point3f& relativeOffset);
@@ -232,8 +223,8 @@ void GraphMap::analyseDetections(const DetectionContainer& detections,
 	for(size_t i = 0; i < transformedDetectionsNew.size(); ++i) {
 		const auto& d0 = transformedDetectionsNew[i];
 
-		// insert object in db if not existing
-		if(existsObject(d0)) { continue; }
+		// skip object if already existing
+		if(existsObject(d0, m_room)) { continue; }
 
 		addObject(d0, m_room);
 
@@ -250,7 +241,7 @@ void GraphMap::analyseDetections(const DetectionContainer& detections,
 	}
 }
 
-bool GraphMap::existsObject(const GraphMap::Detection& d) {
+bool GraphMap::existsObject(const GraphMap::Detection& d, const boost::uuids::uuid& room) {
 	if(existsObjectDBuuid(d)) {
 		return true;
 	}
@@ -261,7 +252,7 @@ bool GraphMap::existsObject(const GraphMap::Detection& d) {
 	float maxy = d.pos.y + d.bboxMax.y;
 	float minz = d.pos.z + d.bboxMin.z;
 	float maxz = d.pos.z + d.bboxMax.z;
-	return existsObjectWithin(minx, maxx, miny, maxy, minz, maxz);
+	return existsObjectWithin(minx, maxx, miny, maxy, minz, maxz, room, d);
 }
 
 bool GraphMap::existsObjectDBuuid(const GraphMap::Detection& d) {
@@ -294,8 +285,10 @@ bool GraphMap::existsObjectDBuuid(const GraphMap::Detection& d) {
 
 bool GraphMap::existsObjectWithin(double minx, double maxx,
 								  double miny, double maxy,
-								  double minz, double maxz) {
-	const unsigned int numEntries = 6;
+								  double minz, double maxz,
+								  const boost::uuids::uuid& room,
+								  const Detection& d) {
+	const unsigned int numEntries = 8;
 	neo4j_map_entry_t entries[numEntries];
 
 	entries[0] = neo4j_map_kentry(neo4j_string("min_x"),
@@ -311,13 +304,24 @@ bool GraphMap::existsObjectWithin(double minx, double maxx,
 	entries[5] = neo4j_map_kentry(neo4j_string("max_z"),
 								  neo4j_float(maxz));
 
+	std::string roomUUID = boost::uuids::to_string(room);
+	entries[6] = neo4j_map_kentry(neo4j_string("room_uuid"),
+								  neo4j_ustring(roomUUID.c_str(),
+												static_cast<unsigned int>(roomUUID.length())));
+
+	std::string detectionType = Detection::getTypeName(d.type);
+	entries[7] = neo4j_map_kentry(neo4j_string("type"),
+								  neo4j_ustring(detectionType.c_str(),
+												static_cast<unsigned int>(detectionType.length())));
+
 	neo4j_value_t params = neo4j_map(entries, numEntries);
-	neo4j_result_stream_t* results = neo4j_run(m_connection, "MATCH (object:object) "
+	neo4j_result_stream_t* results = neo4j_run(m_connection, "MATCH (r:room {uuid: $room_uuid})"
+															 "-[:CONTAINS]->(o:object {name: $type}) "
 															 "WHERE "
-															 "object.pos_x > $min_x AND object.pos_x < $max_x AND "
-															 "object.pos_y > $min_y AND object.pos_y < $max_y AND "
-															 "object.pos_z > $min_z AND object.pos_z < $max_z "
-															 "RETURN object", params);
+															 "$min_x < o.pos_x AND o.pos_x < $max_x AND "
+															 "$min_y < o.pos_y AND o.pos_y < $max_y AND "
+															 "$min_z < o.pos_z AND o.pos_z < $max_z "
+															 "RETURN o", params);
 
 	if(neo4j_check_failure(results)) {
 		const char* msg = neo4j_error_message(results);
@@ -405,7 +409,7 @@ void GraphMap::addRelation(
 		const GraphMap::Detection& d,
 		const GraphMap::Detection& other,
 		cv::Point3f& relativeOffset) {
-	const unsigned int numEntries = 5;
+	const unsigned int numEntries = 6;
 	neo4j_map_entry_t entries[numEntries];
 
 	std::string uuidStr = boost::uuids::to_string(d.uuid);
@@ -423,11 +427,17 @@ void GraphMap::addRelation(
 								  neo4j_float(static_cast<double>(relativeOffset.y)));
 	entries[4] = neo4j_map_kentry(neo4j_string("rel_z"),
 								  neo4j_float(static_cast<double>(relativeOffset.z)));
+	entries[5] = neo4j_map_kentry(neo4j_string("distance"),
+								  neo4j_float(static_cast<double>(std::sqrt(relativeOffset.dot(relativeOffset)))));
 	neo4j_value_t params = neo4j_map(entries, numEntries);
 	neo4j_result_stream_t* results = neo4j_send(m_connection, "MATCH (a:object), (b:object) "
 															  "WHERE a.uuid = $uuid_d AND b.uuid = $uuid_other "
 															  "CREATE (a)"
-															  "-[:OFFSET {x: $rel_x, y: $rel_y, z: $rel_z}]->"
+															  "-[:OFFSET {"
+															  "x: $rel_x, "
+															  "y: $rel_y, "
+															  "z: $rel_z, "
+															  "distance: $distance}]->"
 															  "(b)", params);
 
 	if(neo4j_check_failure(results)) {
