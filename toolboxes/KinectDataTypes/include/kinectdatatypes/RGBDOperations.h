@@ -33,6 +33,11 @@ public:
 					   const float fracfx, const float fracfy,
 					   float& x, float& y, float& z);
 
+	static bool getRowCol(const float x, const float y, const float z,
+						  const float cx, const float cy,
+						  const float fracfx, const float fracfy,
+						  float& r, float& c);
+
 };
 
 } // namespace kinectdatatypes

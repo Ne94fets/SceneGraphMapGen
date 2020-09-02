@@ -49,4 +49,17 @@ bool RGBDOperations::getXYZ(const float r, const float c, const float depth,
 
 }
 
+bool RGBDOperations::getRowCol(const float x, const float y, const float z,
+							   const float cx, const float cy,
+							   const float fracfx, const float fracfy,
+							   float& r, float& c) {
+	if(std::isnan(x) || std::isnan(y) || std::isnan(z)) {
+		return false;
+	}
+
+	r = -(z / fracfy / y) + cy - 0.5;
+	c = (x / fracfx / y) + cx - 0.5;
+	return true;
+}
+
 } // namespace kinectdatatypes

@@ -306,7 +306,19 @@ void ObjectRecognition3d::processPair(const ChannelPair& pair) {
 		cv::Rect resizedRect = Detection::boxOnImage(m_currentRGBMarked.size(), d.box);
 		cv::rectangle(static_cast<cv::Mat>(m_currentRGBMarked), resizedRect, color, 4);
 
+		// draw 3D center into 2D image
+		cv::Point2f centerFrom3D;
+		if(RGBDOperations::getRowCol(d.pos.x, d.pos.y, d.pos.z,
+									 m_regData.rgb_p.cx, m_regData.rgb_p.cy,
+									 1/m_regData.rgb_p.fx, 1/m_regData.rgb_p.fy,
+									 centerFrom3D.y, centerFrom3D.x)) {
+			cv::circle(static_cast<cv::Mat>(m_currentRGBMarked), centerFrom3D, 3, {0, 128, 255}, 2);
+		}
 
+		// draw AABB
+		drawAABB(m_currentRGBMarked, d, m_regData);
+
+		// draw label
 		std::stringstream topText;
 		try {
 			topText << Detection::getTypeName(d.type) << ": " << std::setprecision(0) << std::fixed << d.confidence * 100;
@@ -873,6 +885,57 @@ cv::Rect2d ObjectRecognition3d::clampRect(const Img<>& image, const cv::Rect2d& 
 	double x1 = std::min(br.x, static_cast<double>(image.width()));
 	double y1 = std::min(br.y, static_cast<double>(image.height()));
 	return cv::Rect2d(x0, y0, x1-x0, y1-y0);
+}
+
+
+void ObjectRecognition3d::drawAABB(cv::Mat& img, const Detection& d,
+								   const RegistrationData& regData) {
+	const float cx = regData.rgb_p.cx;
+	const float cy = regData.rgb_p.cy;
+	const float fracfx = 1/regData.rgb_p.fx;
+	const float fracfy = 1/regData.rgb_p.fy;
+
+	cv::Point3f gMin = d.pos + d.bboxMin;
+	cv::Point3f gMax = d.pos + d.bboxMax;
+
+	std::vector<cv::Point3f> boxPoints;
+	boxPoints.reserve(8);
+
+	boxPoints.push_back(cv::Point3f(gMin.x, gMin.y, gMin.z));
+	boxPoints.push_back(cv::Point3f(gMax.x, gMin.y, gMin.z));
+	boxPoints.push_back(cv::Point3f(gMax.x, gMax.y, gMin.z));
+	boxPoints.push_back(cv::Point3f(gMin.x, gMax.y, gMin.z));
+	boxPoints.push_back(cv::Point3f(gMin.x, gMin.y, gMax.z));
+	boxPoints.push_back(cv::Point3f(gMax.x, gMin.y, gMax.z));
+	boxPoints.push_back(cv::Point3f(gMax.x, gMax.y, gMax.z));
+	boxPoints.push_back(cv::Point3f(gMin.x, gMax.y, gMax.z));
+
+	std::vector<cv::Point2f> imgPoints;
+	imgPoints.reserve(8);
+
+	for(const auto& p : boxPoints) {
+		cv::Point2f imgP;
+		if(!RGBDOperations::getRowCol(p.x, p.y, p.z, cx, cy, fracfx, fracfy, imgP.y, imgP.x)) {
+			return;
+		}
+		imgPoints.push_back(imgP);
+	}
+
+	const cv::Scalar color(0, 128, 255);
+	const int thickness = 2;
+
+	cv::line(img, imgPoints[0], imgPoints[1], color, thickness);
+	cv::line(img, imgPoints[1], imgPoints[2], color, thickness);
+	cv::line(img, imgPoints[2], imgPoints[3], color, thickness);
+	cv::line(img, imgPoints[3], imgPoints[0], color, thickness);
+	cv::line(img, imgPoints[4], imgPoints[5], color, thickness);
+	cv::line(img, imgPoints[5], imgPoints[6], color, thickness);
+	cv::line(img, imgPoints[6], imgPoints[7], color, thickness);
+	cv::line(img, imgPoints[7], imgPoints[4], color, thickness);
+	cv::line(img, imgPoints[0], imgPoints[4], color, thickness);
+	cv::line(img, imgPoints[1], imgPoints[5], color, thickness);
+	cv::line(img, imgPoints[2], imgPoints[6], color, thickness);
+	cv::line(img, imgPoints[3], imgPoints[7], color, thickness);
 }
 
 ///////////////////////////////////////////////////////////////////////////////

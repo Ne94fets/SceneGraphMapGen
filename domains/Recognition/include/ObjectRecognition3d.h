@@ -152,6 +152,7 @@ private:
 	// void setPose(const Pose2& pose);
 
 	static cv::Rect2d	clampRect(const Img<>& image, const cv::Rect2d& rect);
+	static void			drawAABB(cv::Mat& img, const Detection& d, const RegistrationData& regData);
 
 private:
 	enum class BackgroundStatus {
