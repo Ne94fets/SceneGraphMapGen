@@ -193,6 +193,9 @@ void GraphMap::analyseDetections(const DetectionContainer& detections,
 	// transform detections into world coordinate system
 	// only those who are not new detections
 	for(const auto& d : detections) {
+		if(std::isnan(d.pos.x)) {
+			continue;
+		}
 		bool isNew = false;
 		for(const auto& dnew : detectionsNew) {
 			if(d.uuid == dnew.uuid) {
@@ -212,6 +215,10 @@ void GraphMap::analyseDetections(const DetectionContainer& detections,
 	}
 
 	for(const auto& d : detectionsNew) {
+		if(std::isnan(d.pos.x)) {
+			continue;
+		}
+
 		Detection tDet = d;
 		Eigen::Vector4f pos(d.pos.x, d.pos.y, d.pos.z, 1);
 		pos = globalTransform * pos;
