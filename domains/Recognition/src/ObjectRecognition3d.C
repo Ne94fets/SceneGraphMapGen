@@ -671,11 +671,17 @@ void ObjectRecognition3d::updateDetection(ObjectRecognition3d::Detection& toUpda
 	}
 }
 
-void ObjectRecognition3d::updateDetectionBox(Detection& d, const ChannelPair& pair, const cv::Rect2f& box) {
+void ObjectRecognition3d::updateDetectionBox(Detection& d, const ChannelPair& pair, const cv::Rect2f& box, bool updateColor) {
 	assert(box.width > 0 && box.height > 0);
 
 	d.box = box;
-	d.pos = calcPosition(pair, box);
+
+	if(updateColor) {
+		d.pos = calcPosition(pair, box, &d.color);
+	} else {
+		d.pos = calcPosition(pair, box);
+	}
+
 	calcBBox(d, pair, box);
 }
 
@@ -692,7 +698,8 @@ size_t ObjectRecognition3d::calcPyramidLevel(const cv::Rect2f& box) {
 }
 
 cv::Point3f ObjectRecognition3d::calcPosition(const ChannelPair& pair,
-											  const cv::Rect2f& rect) {
+											  const cv::Rect2f& rect,
+											  cv::Scalar* color) {
 
 	assert(rect.width >= 0 &&
 		   rect.height >= 0);
@@ -747,11 +754,14 @@ cv::Point3f ObjectRecognition3d::calcPosition(const ChannelPair& pair,
 	const float fracfy = 1/m_regData.rgb_p.fy;
 	cv::Point3f center(0,0,0);
 	cv::Point3f out;
-	for(size_t i = q1; i < q3; ++i) {
-		int r, c;
-		float depth;
-		std::tie(c, r, depth) = m_calcPositionBuffer[i];
-		if(RGBDOperations::getXYZ(r, c, depth, cx, cy, fracfx, fracfy, out)) {
+	if(!color) {
+		for(size_t i = q1; i < q3; ++i) {
+			int r, c;
+			float depth;
+			std::tie(c, r, depth) = m_calcPositionBuffer[i];
+			if(!RGBDOperations::getXYZ(r, c, depth, cx, cy, fracfx, fracfy, out)) {
+				throw std::runtime_error("Could not calculate 3D position. Bug in code.");
+			}
 #if DEBUG_POS_SAMPLING
 			assert(0 <= c && c < m_currentRGBMarked.width() &&
 				   0 <= r-1 && r-1 < m_currentRGBMarked.height());
@@ -759,6 +769,26 @@ cv::Point3f ObjectRecognition3d::calcPosition(const ChannelPair& pair,
 #endif
 			center += out;
 		}
+	} else {
+		for(size_t i = q1; i < q3; ++i) {
+			int r, c;
+			float depth;
+			std::tie(c, r, depth) = m_calcPositionBuffer[i];
+			if(!RGBDOperations::getXYZ(r, c, depth, cx, cy, fracfx, fracfy, out)) {
+				throw std::runtime_error("Could not calculate 3D position. Bug in code.");
+			}
+#if DEBUG_POS_SAMPLING
+			assert(0 <= c && c < m_currentRGBMarked.width() &&
+				   0 <= r-1 && r-1 < m_currentRGBMarked.height());
+			m_currentRGBMarked(c,r-1) = RGBImgType::Pixel(255, 255, 0);
+#endif
+			center += out;
+
+			// scalar in BGR format
+			RGBImgType::Pixel pixelColor = rgbImage(c, r-1);
+			*color += cv::Scalar(pixelColor[2], pixelColor[1], pixelColor[0]);
+		}
+		*color /= cv::Scalar(q3 - q1);
 	}
 	center /= float(q3 - q1);
 
@@ -835,7 +865,7 @@ ObjectRecognition3d::DetectionContainer ObjectRecognition3d::readDetections(
 		Detection d = readDetection(outputs, i);
 
 		// update values dependend on new box
-		updateDetectionBox(d, pair, d.box);
+		updateDetectionBox(d, pair, d.box, true);
 
 		// save detection to array and post it to channel
 		detections.push_back(d);

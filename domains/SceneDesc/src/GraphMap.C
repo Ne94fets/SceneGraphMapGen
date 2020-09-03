@@ -77,6 +77,8 @@ public:
 
 	typedef ChannelSynchronizerSequenceID3<DetectionContainer, DetectionContainer, TransformType>	SyncQueue;
 
+	typedef std::function<void(const Detection&, const std::string&, neo4j_connection*)>	DBFunType;
+	typedef std::unordered_map<std::string, DBFunType>										DBFunMap;
 
 public:
 
@@ -113,9 +115,27 @@ private:
 	bool existsObject(const Detection& d, const boost::uuids::uuid& room);
 	bool existsObjectDBuuid(const Detection& d);
 	bool existsObjectWithin(double minx, double maxx, double miny, double maxy, double minz, double maxz, const boost::uuids::uuid& room, const Detection& d);
+	void addLogic();
 	void addRoom(const boost::uuids::uuid& room);
 	void addObject(const Detection& d, const boost::uuids::uuid& room);
 	void addRelation(const Detection& d, const Detection& other, cv::Point3f& relativeOffset);
+	void addAttibutes(const Detection& d);
+
+	static void execInsertQuery(neo4j_connection_t* conn,
+								const std::string& query,
+								const neo4j_value_t& params);
+	static bool execExistsQuery(neo4j_connection_t* conn,
+								const std::string& query,
+								const neo4j_value_t& params);
+	static neo4j_result_stream_t* execResultQuery(neo4j_connection_t* conn,
+												  const std::string& query,
+												  const neo4j_value_t& params);
+
+	static std::string color2Str(const cv::Scalar& c);
+
+	static void insertColor(const Detection& d, const std::string& attrType, neo4j_connection_t* conn);
+	static void insertState(const Detection& d, const std::string& attrType, neo4j_connection_t* conn);
+	static void insertScreenSize(const Detection& d, const std::string& attrType, neo4j_connection_t* conn);
 
 private:
 	volatile bool	m_shutdown = false;
@@ -127,7 +147,7 @@ private:
 
 	std::thread*	m_worker = nullptr;
 
-	//Channel<Img<>> mChannel;
+	static DBFunMap dbFunMap;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -162,6 +182,9 @@ void GraphMap::initialize() {
 		ss << msg;
 		throw std::runtime_error(ss.str());
 	}
+
+	// add some logic if not present
+	addLogic();
 
 	// add first room
 	addRoom(m_room);
@@ -234,6 +257,7 @@ void GraphMap::analyseDetections(const DetectionContainer& detections,
 		if(existsObject(d0, m_room)) { continue; }
 
 		addObject(d0, m_room);
+		addAttibutes(d0);
 
 		// calc relations to object if other exists
 		for(size_t j = 0; j < transformedDetections.size(); ++j) {
@@ -270,24 +294,10 @@ bool GraphMap::existsObjectDBuuid(const GraphMap::Detection& d) {
 								  neo4j_ustring(uuidStr.c_str(),
 												static_cast<unsigned int>(uuidStr.length())));
 	neo4j_value_t params = neo4j_map(entries, numEntries);
-	neo4j_result_stream_t* results = neo4j_run(m_connection, "MATCH (object:object "
-															 "{uuid: $uuid}) "
-															 "RETURN object", params);
-
-	if(neo4j_check_failure(results)) {
-		const char* msg = neo4j_error_message(results);
-		throw std::runtime_error(msg);
-	}
-
-	neo4j_result_t* result = neo4j_fetch_next(results);
-	bool hasResult = true;
-	if(!result) {
-		hasResult = false;
-	}
-
-	neo4j_close_results(results);
-
-	return hasResult;
+	return execExistsQuery(m_connection,
+						   "MATCH (object:object "
+						   "{uuid: $uuid}) "
+						   "RETURN object", params);
 }
 
 bool GraphMap::existsObjectWithin(double minx, double maxx,
@@ -322,28 +332,56 @@ bool GraphMap::existsObjectWithin(double minx, double maxx,
 												static_cast<unsigned int>(detectionType.length())));
 
 	neo4j_value_t params = neo4j_map(entries, numEntries);
-	neo4j_result_stream_t* results = neo4j_run(m_connection, "MATCH (r:room {uuid: $room_uuid})"
-															 "-[:CONTAINS]->(o:object {name: $type}) "
-															 "WHERE "
-															 "$min_x < o.pos_x AND o.pos_x < $max_x AND "
-															 "$min_y < o.pos_y AND o.pos_y < $max_y AND "
-															 "$min_z < o.pos_z AND o.pos_z < $max_z "
-															 "RETURN o", params);
+	return execExistsQuery(m_connection,
+						   "MATCH (r:room {uuid: $room_uuid})"
+						   "-[:CONTAINS]->(o:object {name: $type}) "
+						   "WHERE "
+						   "$min_x < o.pos_x AND o.pos_x < $max_x AND "
+						   "$min_y < o.pos_y AND o.pos_y < $max_y AND "
+						   "$min_z < o.pos_z AND o.pos_z < $max_z "
+						   "RETURN o",
+						   params);
+}
 
-	if(neo4j_check_failure(results)) {
-		const char* msg = neo4j_error_message(results);
-		throw std::runtime_error(msg);
+void GraphMap::addLogic() {
+	neo4j_value_t params = neo4j_map(nullptr, 0);
+
+	if(execExistsQuery(m_connection,
+					   "MATCH (l:logic) WHERE l.name = 'Logic' RETURN l",
+					   params)) {
+		return;
 	}
 
-	neo4j_result_t* result = neo4j_fetch_next(results);
-	bool hasResult = true;
-	if(!result) {
-		hasResult = false;
-	}
-
-	neo4j_close_results(results);
-
-	return hasResult;
+	execInsertQuery(m_connection,
+					"CREATE (l:logic {name: 'Logic'}) "
+					"CREATE (m:logic {name: 'Map'}) "
+					"CREATE (ot:logic {name: 'ObjectType'}) "
+					"CREATE (tv:logic {name: 'tv'}) "
+					"CREATE (tvState:logic {name: 'State'}) "
+					"CREATE (tvStateIN:logic {name: 'insertState'}) "
+					"CREATE (tvScreenSize:logic {name: 'ScreenSize'}) "
+					"CREATE (tvScreenSizeIN:logic {name: 'insertScreenSize'}) "
+					"CREATE (chair:logic {name: 'chair'}) "
+					"CREATE (chairColor:logic {name: 'Color'}) "
+					"CREATE (chairColorIN:logic {name: 'insertColor'}) "
+					"CREATE (mouse:logic {name: 'mouse'}) "
+					"CREATE (mouseColor:logic {name: 'Color'}) "
+					"CREATE (mouseColorIN:logic {name: 'insertColor'}) "
+					"CREATE "
+					"(l)-[:FOR]->(m), "
+					"(m)-[:FOR]->(ot), "
+					"(ot)-[:FOR]->(tv), "
+					"(tv)-[:ATTRIBUTE]->(tvState), "
+					"(tvState)-[:INSERT]->(tvStateIN), "
+					"(tv)-[:ATTRIBUTE]->(tvScreenSize), "
+					"(tvScreenSize)-[:INSERT]->(tvScreenSizeIN), "
+					"(ot)-[:FOR]->(chair), "
+					"(chair)-[:ATTRIBUTE]->(chairColor), "
+					"(chairColor)-[:INSERT]->(chairColorIN), "
+					"(ot)-[:FOR]->(mouse), "
+					"(mouse)-[:ATTRIBUTE]->(mouseColor), "
+					"(mouseColor)-[:INSERT]->(mouseColorIN)",
+					params);
 }
 
 void GraphMap::addRoom(const boost::uuids::uuid& room) {
@@ -356,16 +394,11 @@ void GraphMap::addRoom(const boost::uuids::uuid& room) {
 												static_cast<unsigned int>(uuidStr.length())));
 
 	neo4j_value_t params = neo4j_map(entries, numEntries);
-	neo4j_result_stream_t* results = neo4j_send(m_connection, "CREATE (:room {"
-															  "uuid: $uuid, "
-															  "name: 'Room'})", params);
-
-	if(neo4j_check_failure(results)) {
-		const char* msg = neo4j_error_message(results);
-		throw std::runtime_error(msg);
-	}
-
-	neo4j_close_results(results);
+	execInsertQuery(m_connection,
+					"CREATE (:room {"
+					"uuid: $uuid, "
+					"name: 'Room'})",
+					params);
 }
 
 void GraphMap::addObject(const GraphMap::Detection& d, const boost::uuids::uuid& room) {
@@ -392,24 +425,19 @@ void GraphMap::addObject(const GraphMap::Detection& d, const boost::uuids::uuid&
 	entries[5] = neo4j_map_kentry(neo4j_string("pos_z"),
 								  neo4j_float(static_cast<double>(d.pos.z)));
 	neo4j_value_t params = neo4j_map(entries, numEntries);
-	neo4j_result_stream_t* results = neo4j_send(m_connection, "MATCH (r:room) "
-															  "WHERE r.uuid = $room_uuid "
-															  "CREATE (o:object {"
-															  "uuid: $uuid, "
-															  "name: $type, "
-															  "pos_x: $pos_x, "
-															  "pos_y: $pos_y, "
-															  "pos_z: $pos_z})"
-															  "CREATE (r)"
-															  "-[:CONTAINS]->"
-															  "(o)", params);
-
-	if(neo4j_check_failure(results)) {
-		const char* msg = neo4j_error_message(results);
-		throw std::runtime_error(msg);
-	}
-
-	neo4j_close_results(results);
+	execInsertQuery(m_connection,
+					"MATCH (r:room) "
+					"WHERE r.uuid = $room_uuid "
+					"CREATE (o:object {"
+					"uuid: $uuid, "
+					"name: $type, "
+					"pos_x: $pos_x, "
+					"pos_y: $pos_y, "
+					"pos_z: $pos_z})"
+					"CREATE (r)"
+					"-[:CONTAINS]->"
+					"(o)",
+					params);
 }
 
 void GraphMap::addRelation(
@@ -437,15 +465,63 @@ void GraphMap::addRelation(
 	entries[5] = neo4j_map_kentry(neo4j_string("distance"),
 								  neo4j_float(static_cast<double>(std::sqrt(relativeOffset.dot(relativeOffset)))));
 	neo4j_value_t params = neo4j_map(entries, numEntries);
-	neo4j_result_stream_t* results = neo4j_send(m_connection, "MATCH (a:object), (b:object) "
-															  "WHERE a.uuid = $uuid_d AND b.uuid = $uuid_other "
-															  "CREATE (a)"
-															  "-[:OFFSET {"
-															  "x: $rel_x, "
-															  "y: $rel_y, "
-															  "z: $rel_z, "
-															  "distance: $distance}]->"
-															  "(b)", params);
+	execInsertQuery(m_connection,
+					"MATCH (a:object), (b:object) "
+					"WHERE a.uuid = $uuid_d AND b.uuid = $uuid_other "
+					"CREATE (a)"
+					"-[:OFFSET {"
+					"x: $rel_x, "
+					"y: $rel_y, "
+					"z: $rel_z, "
+					"distance: $distance}]->"
+					"(b)",
+					params);
+}
+
+void GraphMap::addAttibutes(const GraphMap::Detection& d) {
+	const unsigned int numEntries = 1;
+	neo4j_map_entry_t entries[numEntries];
+
+	std::string typeStr = Detection::getTypeName(d.type);
+	entries[0] = neo4j_map_kentry(neo4j_string("obj_type"),
+								  neo4j_ustring(typeStr.c_str(),
+												static_cast<unsigned int>(typeStr.length())));
+	neo4j_value_t params = neo4j_map(entries, numEntries);
+	neo4j_result_stream_t* results = execResultQuery(
+				m_connection,
+				"MATCH "
+				"(:logic {name: 'Logic'})-[:FOR]->"
+				"(:logic {name: 'Map'})-[:FOR]->"
+				"(:logic {name: 'ObjectType'})-[:FOR]->"
+				"(:logic {name: $obj_type})-[:ATTRIBUTE]->"
+				"(a:logic)-[:INSERT]->(fn:logic) "
+				"RETURN a.name, fn.name",
+				params);
+
+	neo4j_result_t* result = neo4j_fetch_next(results);
+	while(result) {
+		neo4j_value_t attrVal = neo4j_result_field(result, 0);
+		neo4j_value_t fnNameVal = neo4j_result_field(result, 1);
+		char buf[64];
+		neo4j_tostring(attrVal, buf, sizeof(buf));
+		std::string attrName(buf+1, std::strlen(buf)-2);
+		neo4j_tostring(fnNameVal, buf, sizeof(buf));
+		std::string fnName(buf+1, std::strlen(buf)-2);
+
+		const auto& fnIter = dbFunMap.find(fnName);
+		if(fnIter != dbFunMap.end()) {
+			// execute function
+			fnIter->second(d, attrName, m_connection);
+		}
+
+		result = neo4j_fetch_next(results);
+	}
+}
+
+void GraphMap::execInsertQuery(neo4j_connection_t* conn,
+							   const std::string& query,
+							   const neo4j_value_t& params) {
+	neo4j_result_stream_t* results = neo4j_send(conn, query.c_str(), params);
 
 	if(neo4j_check_failure(results)) {
 		const char* msg = neo4j_error_message(results);
@@ -453,8 +529,199 @@ void GraphMap::addRelation(
 	}
 
 	neo4j_close_results(results);
-
 }
+
+bool GraphMap::execExistsQuery(neo4j_connection_t* conn,
+							   const std::string& query,
+							   const neo4j_value_t& params) {
+	neo4j_result_stream_t* results = neo4j_run(conn, query.c_str(), params);
+
+	if(neo4j_check_failure(results)) {
+		const char* msg = neo4j_error_message(results);
+		throw std::runtime_error(msg);
+	}
+
+	neo4j_result_t* result = neo4j_fetch_next(results);
+	bool hasResult = true;
+	if(!result) {
+		hasResult = false;
+	}
+
+	neo4j_close_results(results);
+
+	return hasResult;
+}
+
+neo4j_result_stream_t* GraphMap::execResultQuery(neo4j_connection_t* conn,
+												 const std::string& query,
+												 const neo4j_value_t& params) {
+	neo4j_result_stream_t* results = neo4j_run(conn, query.c_str(), params);
+
+	if(neo4j_check_failure(results)) {
+		const char* msg = neo4j_error_message(results);
+		throw std::runtime_error(msg);
+	}
+
+	return results;
+}
+
+std::string GraphMap::color2Str(const cv::Scalar& c) {
+	cv::Mat3f bgrMat(cv::Vec3f(c[0], c[1], c[2]));
+	cv::Mat3f hsvMat;
+	cv::cvtColor(bgrMat, hsvMat, cv::COLOR_BGR2HSV);
+	cv::Vec3f hsv = hsvMat.at<cv::Vec3f>(0);
+	float h = hsv[0];
+	float s = hsv[1];
+	float v = hsv[2];
+	if(v < 100) {
+		return "black";
+	} else if(s < 50) {
+		return "white";
+	} else if((330 < h && h <= 360) || (0 < h && h <= 15)) { // red
+		return "red";
+	} else if(15 < h && h <= 45) { // orange
+		return "orange";
+	} else if(45 < h && h <= 75) { // yellow
+		return "yellow";
+	} else if(75 < h && h <= 165) { // green
+		return "green";
+	} else if(165 < h && h <= 195) { // turquoise
+		return "turquoise";
+	} else if(195 < h && h <= 270) { // blue
+		return "blue";
+	} else if(270 < h && h <= 285) { // purple
+		return "purple";
+	} else if(285 < h && h <= 330) { // pink
+		return "pink";
+	}
+
+	return "INVALID";
+}
+
+void GraphMap::insertColor(const GraphMap::Detection& d,
+						   const std::string& attrType,
+						   neo4j_connection_t* conn) {
+	const unsigned int numEntries = 3;
+	neo4j_map_entry_t entries[numEntries];
+
+	std::string uuidStr = boost::uuids::to_string(d.uuid);
+	entries[0] = neo4j_map_kentry(neo4j_string("uuid_d"),
+								  neo4j_ustring(uuidStr.c_str(),
+												static_cast<unsigned int>(uuidStr.length())));
+	entries[1] = neo4j_map_kentry(neo4j_string("attr_type"),
+								  neo4j_ustring(attrType.c_str(),
+												static_cast<unsigned int>(attrType.length())));
+	std::string color = color2Str(d.color);
+	entries[2] = neo4j_map_kentry(neo4j_string("col"),
+								  neo4j_ustring(color.c_str(),
+												static_cast<unsigned int>(color.length())));
+	neo4j_value_t params = neo4j_map(entries, numEntries);
+	execInsertQuery(conn,
+					"MATCH (o:object) "
+					"WHERE o.uuid = $uuid_d "
+					"CREATE (a:attribute {name: $col, type: $attr_type}) "
+					"CREATE (o)"
+					"-[:HAS]->"
+					"(a)",
+					params);
+}
+
+void GraphMap::insertState(const GraphMap::Detection& d,
+						   const std::string& attrType,
+						   neo4j_connection_t* conn) {
+	const unsigned int numEntries = 3;
+	neo4j_map_entry_t entries[numEntries];
+
+	std::string uuidStr = boost::uuids::to_string(d.uuid);
+	entries[0] = neo4j_map_kentry(neo4j_string("uuid_d"),
+								  neo4j_ustring(uuidStr.c_str(),
+												static_cast<unsigned int>(uuidStr.length())));
+	entries[1] = neo4j_map_kentry(neo4j_string("attr_type"),
+								  neo4j_ustring(attrType.c_str(),
+												static_cast<unsigned int>(attrType.length())));
+	std::string state = color2Str(d.color);
+	if(state == "black") {
+		state = "Off";
+	} else {
+		state = "On";
+	}
+	entries[2] = neo4j_map_kentry(neo4j_string("state"),
+								  neo4j_ustring(state.c_str(),
+												static_cast<unsigned int>(state.length())));
+	neo4j_value_t params = neo4j_map(entries, numEntries);
+	execInsertQuery(conn,
+					"MATCH (o:object) "
+					"WHERE o.uuid = $uuid_d "
+					"CREATE (a:attribute {name: $state, type: $attr_type}) "
+					"CREATE (o)"
+					"-[:HAS]->"
+					"(a)",
+					params);
+}
+
+void GraphMap::insertScreenSize(const GraphMap::Detection& d,
+								const std::string& attrType,
+								neo4j_connection_t* conn) {
+	const unsigned int numEntries = 3;
+	neo4j_map_entry_t entries[numEntries];
+
+	std::string uuidStr = boost::uuids::to_string(d.uuid);
+	entries[0] = neo4j_map_kentry(neo4j_string("uuid_d"),
+								  neo4j_ustring(uuidStr.c_str(),
+												static_cast<unsigned int>(uuidStr.length())));
+	entries[1] = neo4j_map_kentry(neo4j_string("attr_type"),
+								  neo4j_ustring(attrType.c_str(),
+												static_cast<unsigned int>(attrType.length())));
+	float distx = d.bboxMax.x - d.bboxMin.x;
+	float disty = d.bboxMax.y - d.bboxMin.y;
+	float distz = d.bboxMax.z - d.bboxMin.z;
+	float maxXY = std::max(distx, disty);
+	float diag = std::sqrt(maxXY * maxXY + distz * distz);
+	float zoll = diag * 100 / 2.54;
+
+	// assume some common sizes
+	int roundZoll;
+	if(zoll < 24) {
+		roundZoll = std::round(zoll);
+	} else if(zoll < 28) {
+		roundZoll = 28;
+	} else if(zoll < 32) {
+		roundZoll = 32;
+	} else if(zoll < 42) {
+		roundZoll = 42;
+	} else if(zoll < 50) {
+		roundZoll = 50;
+	} else if(zoll < 55) {
+		roundZoll = 55;
+	} else if(zoll < 65) {
+		roundZoll = 65;
+	} else if(zoll < 75) {
+		roundZoll = 75;
+	} else if(zoll < 85) {
+		roundZoll = 85;
+	} else {
+		roundZoll = std::round(zoll);
+	}
+	std::string size = std::to_string(roundZoll) + "\"";
+	entries[2] = neo4j_map_kentry(neo4j_string("size"),
+								  neo4j_ustring(size.c_str(),
+												static_cast<unsigned int>(size.length())));
+	neo4j_value_t params = neo4j_map(entries, numEntries);
+	execInsertQuery(conn,
+					"MATCH (o:object) "
+					"WHERE o.uuid = $uuid_d "
+					"CREATE (a:attribute {name: $size, type: $attr_type}) "
+					"CREATE (o)"
+					"-[:HAS]->"
+					"(a)",
+					params);
+}
+
+GraphMap::DBFunMap GraphMap::dbFunMap = {
+	{"insertColor", insertColor},
+	{"insertState", insertState},
+	{"insertScreenSize", insertScreenSize}
+};
 
 ///////////////////////////////////////////////////////////////////////////////
 

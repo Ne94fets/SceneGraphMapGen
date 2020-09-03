@@ -56,6 +56,7 @@ public:
 	cv::Point3f			pos;
 	cv::Point3f			bboxMin;
 	cv::Point3f			bboxMax;
+	cv::Scalar			color;
 	boost::uuids::uuid	uuid;
 
 private:

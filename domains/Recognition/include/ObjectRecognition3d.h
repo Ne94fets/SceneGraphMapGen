@@ -136,10 +136,13 @@ private:
 	Detection	readDetection(const std::vector<tf::Tensor>& outputs, int32_t idx);
 
 	void	updateDetection(Detection& toUpdate, const Detection& data);
-	void	updateDetectionBox(Detection& d, const ChannelPair& pair, const cv::Rect2f& box);
+	void	updateDetectionBox(Detection& d, const ChannelPair& pair,
+							   const cv::Rect2f& box, bool updateColor = false);
 
 	size_t				calcPyramidLevel(const cv::Rect2f& box);
-	cv::Point3f			calcPosition(const ChannelPair& pair, const cv::Rect2f& rect);
+	cv::Point3f			calcPosition(const ChannelPair& pair, const cv::Rect2f& rect,
+									 cv::Scalar* color = nullptr);
+	cv::Scalar			calcColor(const ChannelPair& pair, const cv::Rect2f& rect);
 	void				calcBBox(Detection& d, const ChannelPair& pair, const cv::Rect2f& box);
 	float				overlapPercentage(const cv::Rect2f& r0, const cv::Rect2f& r1);
 	DetectionContainer	readDetections(const std::vector<tf::Tensor>& outputs,
