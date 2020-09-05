@@ -137,11 +137,12 @@ private:
 
 	void	updateDetection(Detection& toUpdate, const Detection& data);
 	void	updateDetectionBox(Detection& d, const ChannelPair& pair,
-							   const cv::Rect2f& box, bool updateColor = false);
+							   const cv::Rect2f& box,
+							   std::vector<ImgDepthPoint>& calcPosBuffer, bool updateColor = false);
 
 	size_t				calcPyramidLevel(const cv::Rect2f& box);
 	cv::Point3f			calcPosition(const ChannelPair& pair, const cv::Rect2f& rect,
-									 cv::Scalar* color = nullptr);
+									 std::vector<ImgDepthPoint>& calcPosBuffer, cv::Scalar* color = nullptr);
 	cv::Scalar			calcColor(const ChannelPair& pair, const cv::Rect2f& rect);
 	void				calcBBox(Detection& d, const ChannelPair& pair, const cv::Rect2f& box);
 	float				overlapPercentage(const cv::Rect2f& r0, const cv::Rect2f& r1);
@@ -196,6 +197,7 @@ private:
 	std::mutex				m_detectionImageMutex;
 
 	std::vector<ImgDepthPoint>			m_calcPositionBuffer;
+	std::vector<ImgDepthPoint>			m_bgCalcPositionBuffer;
 
 	std::mutex							m_bgDetectionsMutex;
 	std::vector<Detection>				m_bgDetections;

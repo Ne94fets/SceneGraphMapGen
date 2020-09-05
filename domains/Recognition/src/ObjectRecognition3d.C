@@ -95,6 +95,7 @@ ObjectRecognition3d::ObjectRecognition3d() {
 
 	// reserve memory for size*size points used in calcPosition
 	m_calcPositionBuffer.reserve(m_sampleGridSize*m_sampleGridSize);
+	m_bgCalcPositionBuffer.reserve(m_sampleGridSize*m_sampleGridSize);
 }
 
 ObjectRecognition3d::~ObjectRecognition3d() {
@@ -401,7 +402,7 @@ void ObjectRecognition3d::trackLastDetections(const ChannelPair& pair) {
 
 			// update detection
 			auto normalized = Detection::normalizeBox(img.size(), box);
-			updateDetectionBox(d, pair, normalized);
+			updateDetectionBox(d, pair, normalized, m_calcPositionBuffer);
 
 			// swap detection and tracker to front
 			std::swap(m_detections[validCnt], m_detections[i]);
@@ -538,7 +539,7 @@ void ObjectRecognition3d::trackNewDetections(const ChannelPair& pair) {
 
 		// update detection
 		auto normalized = Detection::normalizeBox(img.size(), trackedBox);
-		updateDetectionBox(d, pair, normalized);
+		updateDetectionBox(d, pair, normalized, m_calcPositionBuffer);
 
 		// swap detection and tracker to front
 		std::swap(m_bgDetections[validCnt], m_bgDetections[i]);
@@ -671,15 +672,15 @@ void ObjectRecognition3d::updateDetection(ObjectRecognition3d::Detection& toUpda
 	}
 }
 
-void ObjectRecognition3d::updateDetectionBox(Detection& d, const ChannelPair& pair, const cv::Rect2f& box, bool updateColor) {
+void ObjectRecognition3d::updateDetectionBox(Detection& d, const ChannelPair& pair, const cv::Rect2f& box, std::vector<ImgDepthPoint>& calcPosBuffer, bool updateColor) {
 	assert(box.width > 0 && box.height > 0);
 
 	d.box = box;
 
 	if(updateColor) {
-		d.pos = calcPosition(pair, box, &d.color);
+		d.pos = calcPosition(pair, box, calcPosBuffer, &d.color);
 	} else {
-		d.pos = calcPosition(pair, box);
+		d.pos = calcPosition(pair, box, calcPosBuffer);
 	}
 
 	calcBBox(d, pair, box);
@@ -699,6 +700,7 @@ size_t ObjectRecognition3d::calcPyramidLevel(const cv::Rect2f& box) {
 
 cv::Point3f ObjectRecognition3d::calcPosition(const ChannelPair& pair,
 											  const cv::Rect2f& rect,
+											  std::vector<ImgDepthPoint>& calcPosBuffer,
 											  cv::Scalar* color) {
 
 	assert(rect.width >= 0 &&
@@ -727,7 +729,7 @@ cv::Point3f ObjectRecognition3d::calcPosition(const ChannelPair& pair,
 	float yStep = std::max(float(ymax - ymin) / m_sampleGridSize, 1.f);
 
 	// do not always allocate and reserve memory
-	m_calcPositionBuffer.clear();
+	calcPosBuffer.clear();
 	for(float fr = ymin; fr < ymax; fr+=yStep) {
 		int r = static_cast<int>(fr);
 		const float* depthRow = depthImage[r];
@@ -735,15 +737,22 @@ cv::Point3f ObjectRecognition3d::calcPosition(const ChannelPair& pair,
 			int c = static_cast<int>(fc);
 			float depth = depthRow[c];
 			if(std::isfinite(depth) && depth > 0)
-				m_calcPositionBuffer.push_back({c, r, depth});
+				calcPosBuffer.push_back({c, r, depth});
 		}
 	}
 
+	// return nan if no depth position is available
+	if(calcPosBuffer.empty()) {
+		return cv::Point3f(std::numeric_limits<float>::quiet_NaN(),
+						   std::numeric_limits<float>::quiet_NaN(),
+						   std::numeric_limits<float>::quiet_NaN());
+	}
+
 	// get mean of depths between 0.25 and 0.75 quantile
-	const auto q1 = m_calcPositionBuffer.size() / 4;
-	const auto q2 = m_calcPositionBuffer.size() / 2;
+	const auto q1 = calcPosBuffer.size() / 4;
+	const auto q2 = calcPosBuffer.size() / 2;
 	const auto q3 = q1 + q2;
-	std::sort(m_calcPositionBuffer.begin(), m_calcPositionBuffer.end(), [](const ImgDepthPoint& lhs, const ImgDepthPoint& rhs) {
+	std::sort(calcPosBuffer.begin(), calcPosBuffer.end(), [](const ImgDepthPoint& lhs, const ImgDepthPoint& rhs) {
 		return std::get<2>(lhs) < std::get<2>(rhs);
 	});
 
@@ -758,7 +767,7 @@ cv::Point3f ObjectRecognition3d::calcPosition(const ChannelPair& pair,
 		for(size_t i = q1; i < q3; ++i) {
 			int r, c;
 			float depth;
-			std::tie(c, r, depth) = m_calcPositionBuffer[i];
+			std::tie(c, r, depth) = calcPosBuffer[i];
 			if(!RGBDOperations::getXYZ(r, c, depth, cx, cy, fracfx, fracfy, out)) {
 				throw std::runtime_error("Could not calculate 3D position. Bug in code.");
 			}
@@ -770,10 +779,12 @@ cv::Point3f ObjectRecognition3d::calcPosition(const ChannelPair& pair,
 			center += out;
 		}
 	} else {
+		std::vector<cv::Vec3f> colors;
+		colors.reserve(q3-q1);
 		for(size_t i = q1; i < q3; ++i) {
 			int r, c;
 			float depth;
-			std::tie(c, r, depth) = m_calcPositionBuffer[i];
+			std::tie(c, r, depth) = calcPosBuffer[i];
 			if(!RGBDOperations::getXYZ(r, c, depth, cx, cy, fracfx, fracfy, out)) {
 				throw std::runtime_error("Could not calculate 3D position. Bug in code.");
 			}
@@ -784,11 +795,14 @@ cv::Point3f ObjectRecognition3d::calcPosition(const ChannelPair& pair,
 #endif
 			center += out;
 
-			// scalar in BGR format
+			// scalar in BGR format as image
 			RGBImgType::Pixel pixelColor = rgbImage(c, r-1);
-			*color += cv::Scalar(pixelColor[2], pixelColor[1], pixelColor[0]);
+			colors.push_back(cv::Vec3f(pixelColor[0], pixelColor[1], pixelColor[2]));
 		}
-		*color /= cv::Scalar(q3 - q1);
+		std::vector<int> labels;
+		std::vector<cv::Vec3f> outColors;
+		cv::kmeans(colors, 1, labels, cv::TermCriteria(cv::TermCriteria::EPS + cv::TermCriteria::COUNT, 10, 0.1), 10, cv::KmeansFlags::KMEANS_RANDOM_CENTERS, outColors);
+		*color = outColors[0];
 	}
 	center /= float(q3 - q1);
 
@@ -865,7 +879,7 @@ ObjectRecognition3d::DetectionContainer ObjectRecognition3d::readDetections(
 		Detection d = readDetection(outputs, i);
 
 		// update values dependend on new box
-		updateDetectionBox(d, pair, d.box, true);
+		updateDetectionBox(d, pair, d.box, m_bgCalcPositionBuffer, true);
 
 		// save detection to array and post it to channel
 		detections.push_back(d);
@@ -951,7 +965,7 @@ void ObjectRecognition3d::drawAABB(cv::Mat& img, const Detection& d,
 		imgPoints.push_back(imgP);
 	}
 
-	const cv::Scalar color(0, 128, 255);
+	const cv::Scalar color = d.color;//(0, 128, 255);
 	const int thickness = 2;
 
 	cv::line(img, imgPoints[0], imgPoints[1], color, thickness);
