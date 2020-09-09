@@ -226,9 +226,6 @@ private:
 	Channel<TransformType>	m_channelGlobalTransfrom;
 	Channel<TransformType>	m_channelLocalTransform;
 //	Channel<PointCloud<Eigen::Vector3f>	m_channelPointCloud;
-
-	size_t	m_measurementCnt = 0;
-	size_t	m_accumulatedProcessingTime = 0;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -379,6 +376,7 @@ void PointCloudRegistration::process() {
 
 	std::cout << "PointCloudRegistration has registration data. Running in main loop now." << std::endl;
 
+	std::vector<long> durations;
 	while(!m_shutdown) {
 
 		// wait for a matching pair
@@ -391,11 +389,18 @@ void PointCloudRegistration::process() {
 
 		auto endTime = std::chrono::system_clock::now();
 		auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
-		m_measurementCnt++;
-		m_accumulatedProcessingTime += duration;
-		std::cout << "PCL avg process time: " << (double)m_accumulatedProcessingTime / m_measurementCnt << std::endl;
-		if(duration > 1000/30)
+
+		if(duration > 1000/30) {
 			std::cout << "PCL process took: " << duration << "ms" << std::endl;
+		}
+
+		durations.push_back(duration);
+		float avg(0);
+		for(const auto d : durations) {
+			avg += float(d);
+		}
+		avg /= durations.size();
+		std::cout << "PCL: Average tracking duration: " << avg << std::endl;
 	}
 }
 
