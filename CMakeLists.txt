@@ -422,7 +422,7 @@ if(NOT EXISTS "${PCL_DIR}")
     message(STATUS "Installing locally ${PCL_NAME}")
     execute_process(
         COMMAND ${CMAKE_COMMAND} -E env DESTDIR=${PCL_DIR} make install
-        WORKING_DIRECTORY ${PCL_DIR}
+		WORKING_DIRECTORY ${PCL_DIR}/build
         ERROR_VARIABLE EXEC_ERR)
     if(${RESULT_VARIABLE})
         message(FATAL_ERROR ${EXEC_ERR})
