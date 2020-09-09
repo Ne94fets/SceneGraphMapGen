@@ -66,7 +66,8 @@ using kinectdatatypes::RGBDOperations;
 #include <recognitiondatatypes/TrackerGenerator.h>
 using recognitiondatatypes::TrackerGenerator;
 
-#define DEBUG_POS_SAMPLING 1
+#define DEBUG_POS_HIST 0
+#define DEBUG_POS_SAMPLING 0
 #define DEBUG_BG_FG_TRACKING 0
 
 namespace tf = tensorflow;
@@ -203,6 +204,7 @@ void ObjectRecognition3d::process() {
 
 	std::cout << "ObjectRecognition has registration data. Running in main loop now." << std::endl;
 
+	std::vector<long> durations;
 	while(!m_shutdown) {
 
 		// wait for a matching pair
@@ -215,8 +217,17 @@ void ObjectRecognition3d::process() {
 
 		auto endTime = std::chrono::system_clock::now();
 		auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
-		if(duration > 1000/30)
+		if(duration > 1000/30) {
 			std::cout << "ObjectRec process took: " << duration << "ms" << std::endl;
+		}
+
+		durations.push_back(duration);
+		float avg(0);
+		for(const auto d : durations) {
+			avg += float(d);
+		}
+		avg /= durations.size();
+		std::cout << "ObjectRec: Average tracking duration: " << avg << std::endl;
 	}
 }
 
@@ -239,7 +250,6 @@ void ObjectRecognition3d::backgroundProcess() {
 
 		auto endTime = std::chrono::system_clock::now();
 		auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
-		durations.push_back(duration);
 
 		if(duration > 1000/30) {
 			std::cout << "Detecting " << detections.size() << " took: " << duration << "ms" << std::endl;
@@ -270,12 +280,13 @@ void ObjectRecognition3d::backgroundProcess() {
 //		m_bgDetections = detections;
 		bgDetectionsLock.unlock();
 
+		durations.push_back(duration);
 		float avg(0);
 		for(const auto d : durations) {
-			avg += float(d) / durations.size();
+			avg += float(d);
 		}
-
-		std::cout << "Average detection duration: " << avg << std::endl;
+		avg /= durations.size();
+		std::cout << "ObjectRec: Average detection duration: " << avg << std::endl;
 
 		m_bgStatus = BackgroundStatus::DONE;
 	}
@@ -296,57 +307,7 @@ void ObjectRecognition3d::processPair(const ChannelPair& pair) {
 	trackNewDetections(pair);
 
 	// draw detections to an debug output image
-	for(const auto& d : m_detections) {
-		cv::Scalar color(0, 0, 255);
-		if(d.pyramidLevel == 1) {
-			color = cv::Scalar(0, 255, 0);
-		} else if(d.pyramidLevel == 2) {
-			color = cv::Scalar(255, 0, 0);
-		}
-
-		cv::Rect resizedRect = Detection::boxOnImage(m_currentRGBMarked.size(), d.box);
-		cv::rectangle(static_cast<cv::Mat>(m_currentRGBMarked), resizedRect, color, 4);
-
-		// draw 3D center into 2D image
-		cv::Point2f centerFrom3D;
-		if(RGBDOperations::getRowCol(d.pos.x, d.pos.y, d.pos.z,
-									 m_regData.rgb_p.cx, m_regData.rgb_p.cy,
-									 1/m_regData.rgb_p.fx, 1/m_regData.rgb_p.fy,
-									 centerFrom3D.y, centerFrom3D.x)) {
-			cv::circle(static_cast<cv::Mat>(m_currentRGBMarked), centerFrom3D, 3, {0, 128, 255}, 2);
-		}
-
-		// draw AABB
-		drawAABB(m_currentRGBMarked, d, m_regData);
-
-		// draw label
-		std::stringstream topText;
-		try {
-			topText << Detection::getTypeName(d.type) << ": " << std::setprecision(0) << std::fixed << d.confidence * 100;
-		} catch (const std::runtime_error& e) {
-			std::cout << e.what() << std::endl;
-		}
-		int baseline = 0;
-		double fontScale = 1;
-		int thickness = 2;
-		auto textSize = cv::getTextSize(topText.str(), cv::FONT_HERSHEY_SIMPLEX, fontScale, thickness, &baseline);
-		auto textPos = cv::Point2i(static_cast<int>(d.box.x * m_currentRGBMarked.width()),
-								   static_cast<int>(d.box.y * m_currentRGBMarked.height()));
-		cv::rectangle(static_cast<cv::Mat>(m_currentRGBMarked), cv::Rect(textPos + cv::Point2i(0, -textSize.height), textSize), color, -1);
-		cv::putText(m_currentRGBMarked.getMat(), topText.str(), textPos,
-					cv::FONT_HERSHEY_SIMPLEX, fontScale, cv::Scalar(0, 0, 0), thickness);
-		textPos.y += textSize.height + 4;
-		std::stringstream textRelPos;
-		textRelPos << d.pos;
-		cv::putText(m_currentRGBMarked.getMat(), textRelPos.str(), textPos, cv::FONT_HERSHEY_SIMPLEX, fontScale, color, thickness);
-	}
-
-//	m_channelRGBMarked.post(Stamped<RGBImgType>(m_currentRGBMarked,
-//												Time::now(),
-//												pair.first->sequenceID));
-	auto wRGBMarked = m_channelRGBMarked.write();
-	wRGBMarked->sequenceID = pair.first.sequenceID;
-	wRGBMarked->value() = m_currentRGBMarked.clone();
+	debugDrawTrackedDetections(pair);
 
 	// post detections
 	// new detections will be posted when background process enters done state
@@ -388,8 +349,9 @@ void ObjectRecognition3d::trackLastDetections(const ChannelPair& pair) {
 		if(trackSucess && box.height > 0 && box.width > 0) {
 			auto trackingEnd = std::chrono::system_clock::now();
 			auto trackingDuration = std::chrono::duration_cast<std::chrono::milliseconds>(trackingEnd - trackingStart).count();
-			if(trackingDuration > 1000/30)
+			if(trackingDuration > 1000/30) {
 				std::cout << "Tracking #" << i << " took: " << trackingDuration << "ms" << std::endl;
+			}
 
 			// clamp box
 			box = clampRect(img, box);
@@ -402,6 +364,10 @@ void ObjectRecognition3d::trackLastDetections(const ChannelPair& pair) {
 
 			// update detection
 			auto normalized = Detection::normalizeBox(img.size(), box);
+
+			// make sure unexpected growth is not too greate, since not moving that fast
+			assert(normalized.area()/d.box.area() <= 2);
+
 			updateDetectionBox(d, pair, normalized, m_calcPositionBuffer);
 
 			// swap detection and tracker to front
@@ -628,6 +594,73 @@ void ObjectRecognition3d::matchDetectionsIndependentGreedy(
 	m_bgTrackers.clear();
 }
 
+void ObjectRecognition3d::debugDrawTrackedDetections(const ChannelPair& pair) {
+	for(size_t i = 0; i < m_detections.size(); ++i) {
+		const auto& d = m_detections[i];
+		cv::Scalar color(0, 0, 255);
+		if(d.pyramidLevel == 1) {
+			color = cv::Scalar(0, 255, 0);
+		} else if(d.pyramidLevel == 2) {
+			color = cv::Scalar(255, 0, 0);
+		}
+
+		cv::Rect resizedRect = Detection::boxOnImage(m_currentRGBMarked.size(), d.box);
+		cv::rectangle(static_cast<cv::Mat>(m_currentRGBMarked), resizedRect, color, 4);
+
+		// draw 3D center into 2D image
+		cv::Point2f centerFrom3D;
+		if(RGBDOperations::getRowCol(d.pos.x, d.pos.y, d.pos.z,
+									 m_regData.rgb_p.cx, m_regData.rgb_p.cy,
+									 1/m_regData.rgb_p.fx, 1/m_regData.rgb_p.fy,
+									 centerFrom3D.y, centerFrom3D.x)) {
+			cv::circle(static_cast<cv::Mat>(m_currentRGBMarked), centerFrom3D, 3, {0, 128, 255}, 2);
+		}
+
+		// draw AABB
+		drawAABB(m_currentRGBMarked, d, m_regData);
+
+		// draw label
+		std::stringstream topText;
+		try {
+			topText << Detection::getTypeName(d.type) << ": " << std::setprecision(0) << std::fixed << d.confidence * 100;
+		} catch (const std::runtime_error& e) {
+			std::cout << e.what() << std::endl;
+		}
+		int baseline = 0;
+		double fontScale = 1;
+		int thickness = 2;
+		auto textSize = cv::getTextSize(topText.str(), cv::FONT_HERSHEY_SIMPLEX, fontScale, thickness, &baseline);
+		auto textPos = cv::Point2i(static_cast<int>(d.box.x * m_currentRGBMarked.width()),
+								   static_cast<int>(d.box.y * m_currentRGBMarked.height()));
+		cv::rectangle(static_cast<cv::Mat>(m_currentRGBMarked), cv::Rect(textPos + cv::Point2i(0, -textSize.height), textSize), color, -1);
+		cv::putText(m_currentRGBMarked.getMat(), topText.str(), textPos,
+					cv::FONT_HERSHEY_SIMPLEX, fontScale, cv::Scalar(0, 0, 0), thickness);
+		textPos.y += textSize.height + 4;
+		std::stringstream textRelPos;
+		textRelPos << std::setprecision(2) << std::fixed << d.pos;
+		cv::putText(m_currentRGBMarked.getMat(), textRelPos.str(), textPos, cv::FONT_HERSHEY_SIMPLEX, fontScale, color, thickness);
+
+		std::stringstream bottomText;
+		std::string uuidStr = boost::uuids::to_string(d.uuid);
+		uuidStr.resize(5);
+		bottomText << uuidStr;
+		textSize = cv::getTextSize(bottomText.str(), cv::FONT_HERSHEY_SIMPLEX, fontScale, thickness, &baseline);
+		textPos = cv::Point2i(static_cast<int>((d.box.x + d.box.width) * m_currentRGBMarked.width() - textSize.width),
+							  static_cast<int>((d.box.y + d.box.height) * m_currentRGBMarked.height() + textSize.height));
+
+		cv::rectangle(static_cast<cv::Mat>(m_currentRGBMarked), cv::Rect(textPos + cv::Point2i(0, -textSize.height), textSize), color, -1);
+		cv::putText(m_currentRGBMarked.getMat(), bottomText.str(), textPos,
+					cv::FONT_HERSHEY_SIMPLEX, fontScale, cv::Scalar(0, 0, 0), thickness);
+	}
+
+//	m_channelRGBMarked.post(Stamped<RGBImgType>(m_currentRGBMarked,
+//												Time::now(),
+//												pair.first->sequenceID));
+	auto wRGBMarked = m_channelRGBMarked.write();
+	wRGBMarked->sequenceID = pair.first.sequenceID;
+	wRGBMarked->value() = m_currentRGBMarked.clone();
+}
+
 int32_t ObjectRecognition3d::readNumDetections(const std::vector<tensorflow::Tensor>& outputs) {
 	return static_cast<int32_t>(outputs[0].flat<float>().data()[0]);
 }
@@ -730,19 +763,38 @@ cv::Point3f ObjectRecognition3d::calcPosition(const ChannelPair& pair,
 
 	// do not always allocate and reserve memory
 	calcPosBuffer.clear();
+#if DEBUG_POS_HIST
+	size_t binSize = 30; // 3cm
+	std::vector<std::vector<ImgDepthPoint>> hist(5000/binSize);
+	size_t depthValCnt = 0;
+#endif
 	for(float fr = ymin; fr < ymax; fr+=yStep) {
 		int r = static_cast<int>(fr);
 		const float* depthRow = depthImage[r];
 		for(float fc = xmin; fc < xmax; fc+=xStep) {
 			int c = static_cast<int>(fc);
 			float depth = depthRow[c];
-			if(std::isfinite(depth) && depth > 0)
+			if(std::isfinite(depth) && depth > 0) {
 				calcPosBuffer.push_back({c, r, depth});
+#if DEBUG_POS_HIST
+				size_t bin = static_cast<size_t>(std::round(depth / binSize));
+				hist[bin].push_back({c, r, depth});
+				depthValCnt++;
+#endif
+#if DEBUG_POS_SAMPLING
+			// only draw tracked detections on current RGB debug
+			if(&calcPosBuffer == &m_calcPositionBuffer) {
+				assert(0 <= c && c < m_currentRGBMarked.width() &&
+					   0 <= r-1 && r-1 < m_currentRGBMarked.height());
+				m_currentRGBMarked(c,r-1) = RGBImgType::Pixel(255, 255, 0);
+			}
+#endif
+			}
 		}
 	}
 
 	// return nan if no depth position is available
-	if(calcPosBuffer.empty()) {
+	if(calcPosBuffer.size() < 2) {
 		return cv::Point3f(std::numeric_limits<float>::quiet_NaN(),
 						   std::numeric_limits<float>::quiet_NaN(),
 						   std::numeric_limits<float>::quiet_NaN());
@@ -755,6 +807,28 @@ cv::Point3f ObjectRecognition3d::calcPosition(const ChannelPair& pair,
 	std::sort(calcPosBuffer.begin(), calcPosBuffer.end(), [](const ImgDepthPoint& lhs, const ImgDepthPoint& rhs) {
 		return std::get<2>(lhs) < std::get<2>(rhs);
 	});
+
+#if DEBUG_POS_HIST
+	int histWidth = 1024;
+	int histHeight = 600;
+	int binWidth = std::floor(double(histWidth) / hist.size());
+	cv::Mat histImage(histHeight, histWidth, CV_8UC3, cv::Scalar(255,255,255));
+	size_t maxSize = 0;
+	for(const auto& bin : hist) {
+		if(bin.size() > maxSize) {
+			maxSize = bin.size();
+		}
+	}
+	std::cout << "Hist: ";
+	for(size_t i = 1; i < hist.size(); ++i) {
+		cv::line(histImage,
+				 cv::Point(binWidth*(i-1), histHeight - std::round(double(hist[i-1].size()) / depthValCnt * histHeight)),
+				cv::Point(binWidth*i, histHeight - std::round(double(hist[i].size()) / depthValCnt * histHeight)),
+				cv::Scalar(0,0,0), 2);
+		std::cout << "(" << binSize * i << "," << hist[i-1].size() << ") ";
+	}
+	std::cout << std::endl;
+#endif
 
 	// average points in world space
 	const float cx = m_regData.rgb_p.cx;
@@ -772,9 +846,12 @@ cv::Point3f ObjectRecognition3d::calcPosition(const ChannelPair& pair,
 				throw std::runtime_error("Could not calculate 3D position. Bug in code.");
 			}
 #if DEBUG_POS_SAMPLING
-			assert(0 <= c && c < m_currentRGBMarked.width() &&
-				   0 <= r-1 && r-1 < m_currentRGBMarked.height());
-			m_currentRGBMarked(c,r-1) = RGBImgType::Pixel(255, 255, 0);
+			// only draw tracked detections on current RGB debug
+			if(&calcPosBuffer == &m_calcPositionBuffer) {
+				assert(0 <= c && c < m_currentRGBMarked.width() &&
+					   0 <= r-1 && r-1 < m_currentRGBMarked.height());
+				m_currentRGBMarked(c,r-1) = RGBImgType::Pixel(255, 0, 255);
+			}
 #endif
 			center += out;
 		}
@@ -789,9 +866,12 @@ cv::Point3f ObjectRecognition3d::calcPosition(const ChannelPair& pair,
 				throw std::runtime_error("Could not calculate 3D position. Bug in code.");
 			}
 #if DEBUG_POS_SAMPLING
-			assert(0 <= c && c < m_currentRGBMarked.width() &&
-				   0 <= r-1 && r-1 < m_currentRGBMarked.height());
-			m_currentRGBMarked(c,r-1) = RGBImgType::Pixel(255, 255, 0);
+			// only draw tracked detections on current RGB debug
+			if(&calcPosBuffer == &m_calcPositionBuffer) {
+				assert(0 <= c && c < m_currentRGBMarked.width() &&
+					   0 <= r-1 && r-1 < m_currentRGBMarked.height());
+				m_currentRGBMarked(c,r-1) = RGBImgType::Pixel(255, 0, 255);
+			}
 #endif
 			center += out;
 
@@ -805,6 +885,22 @@ cv::Point3f ObjectRecognition3d::calcPosition(const ChannelPair& pair,
 		*color = outColors[0];
 	}
 	center /= float(q3 - q1);
+
+#if DEBUG_POS_HIST
+	if(&calcPosBuffer == &m_calcPositionBuffer) {
+		cv::Size sizeAdd(0,0);// = rrect.size()/4;
+		cv::Rect bigRect = clampRect(m_currentRGBMarked, rrect - cv::Point(sizeAdd.width, sizeAdd.height) + sizeAdd*2);
+		cv::Mat imgHistRoi = m_currentRGBMarked(bigRect);
+//		cv::Mat imgHistPair(std::max(histHeight, imgHistRoi.rows), histWidth + imgHistRoi.cols, CV_8UC3, cv::Scalar(0,0,0));
+//		imgHistRoi.copyTo(imgHistPair(cv::Rect(0, 0, imgHistRoi.cols, imgHistRoi.rows)));
+//		histImage.copyTo(imgHistPair(cv::Rect(imgHistRoi.cols, 0, histImage.cols, histImage.rows)));
+		cv::imshow("Depth Histogram Image", imgHistRoi);
+		cv::imwrite("DepthHistImg.png", imgHistRoi);
+		cv::imshow("Depth Histogram", histImage);
+		size_t i = 0;
+//		cv::imshow("Depth Histogramm", imgHistPair);
+	}
+#endif
 
 	return center;
 }

@@ -129,6 +129,8 @@ private:
 
 	void matchDetectionsIndependentGreedy(const Stamped<ImgPyramid>& rgbImage);
 
+	void debugDrawTrackedDetections(const ChannelPair& pair);
+
 	int32_t		readNumDetections(const std::vector<tf::Tensor>& outputs);
 	cv::Rect2f	readDetectionRect(const std::vector<tf::Tensor>& outputs, int32_t idx);
 	float		readDetectionConfidence(const std::vector<tf::Tensor>& outputs, int32_t idx);
