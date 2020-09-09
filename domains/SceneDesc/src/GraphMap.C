@@ -113,13 +113,21 @@ private:
 						   const TransformType& globalTransform);
 
 	bool existsObject(const Detection& d, const boost::uuids::uuid& room);
-	bool existsObjectDBuuid(const Detection& d);
+	bool existsObjectUuid(const Detection& d);
 	bool existsObjectWithin(double minx, double maxx, double miny, double maxy, double minz, double maxz, const boost::uuids::uuid& room, const Detection& d);
 	void addLogic();
 	void addRoom(const boost::uuids::uuid& room);
 	void addObject(const Detection& d, const boost::uuids::uuid& room);
 	void addRelation(const Detection& d, const Detection& other, cv::Point3f& relativeOffset);
 	void addAttibutes(const Detection& d);
+	std::string genRoomDescription() const;
+	std::string genRoomObjCountDescription(const std::string& uuid) const;
+	std::string genObjectDescription(const std::string& uuid, const Eigen::Vector3f& center) const;
+	std::string genAttributeDescription(const std::string& name, const std::string& type) const;
+	std::string genDescriptionFromOffsetRelation(const std::string& uuid,
+												 const std::string& name,
+												 const Eigen::Vector3f& center) const;
+	Eigen::Vector3f getRoomCenter() const;
 
 	static void execInsertQuery(neo4j_connection_t* conn,
 								const std::string& query,
@@ -132,6 +140,7 @@ private:
 												  const neo4j_value_t& params);
 
 	static std::string color2Str(const cv::Scalar& c);
+	static std::string dir2Str(const Eigen::Vector3f& watchDir, const Eigen::Vector3f& offset);
 
 	static void insertColor(const Detection& d, const std::string& attrType, neo4j_connection_t* conn);
 	static void insertState(const Detection& d, const std::string& attrType, neo4j_connection_t* conn);
@@ -146,6 +155,8 @@ private:
 	SyncQueue						m_syncQueue;
 
 	std::thread*	m_worker = nullptr;
+
+	std::vector<long> m_durations;
 
 	static DBFunMap dbFunMap;
 };
@@ -205,6 +216,8 @@ void GraphMap::onSynchronized(ChannelRead<GraphMap::DetectionContainer> detectio
 void GraphMap::analyseDetections(const DetectionContainer& detections,
 								 const DetectionContainer& detectionsNew,
 								 const TransformType& globalTransform) {
+	auto startTime = std::chrono::system_clock::now();
+
 	if(detections.empty() || detectionsNew.empty())
 		return;
 
@@ -270,10 +283,26 @@ void GraphMap::analyseDetections(const DetectionContainer& detections,
 		// put new detection into detections
 		transformedDetections.push_back(d0);
 	}
+
+	auto endTime = std::chrono::system_clock::now();
+	auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
+	if(duration > 1000/30) {
+		std::cout << "GraphMap analyse took: " << duration << "ms" << std::endl;
+	}
+
+	m_durations.push_back(duration);
+	float avg(0);
+	for(const auto d : m_durations) {
+		avg += float(d);
+	}
+	avg /= m_durations.size();
+	std::cout << "GraphMap: Average insert duration: " << avg << std::endl;
+
+	std::cout << genRoomDescription() << std::endl;
 }
 
 bool GraphMap::existsObject(const GraphMap::Detection& d, const boost::uuids::uuid& room) {
-	if(existsObjectDBuuid(d)) {
+	if(existsObjectUuid(d)) {
 		return true;
 	}
 
@@ -286,7 +315,7 @@ bool GraphMap::existsObject(const GraphMap::Detection& d, const boost::uuids::uu
 	return existsObjectWithin(minx, maxx, miny, maxy, minz, maxz, room, d);
 }
 
-bool GraphMap::existsObjectDBuuid(const GraphMap::Detection& d) {
+bool GraphMap::existsObjectUuid(const GraphMap::Detection& d) {
 	const unsigned int numEntries = 1;
 	neo4j_map_entry_t entries[numEntries];
 	std::string uuidStr = boost::uuids::to_string(d.uuid);
@@ -518,6 +547,280 @@ void GraphMap::addAttibutes(const GraphMap::Detection& d) {
 	}
 }
 
+std::string GraphMap::genRoomDescription() const {
+	Eigen::Vector3f center = getRoomCenter();
+
+	std::stringstream description;
+
+	const unsigned int numEntries = 1;
+	neo4j_map_entry_t entries[numEntries];
+
+	std::string room_uuid = boost::uuids::to_string(m_room);
+	entries[0] = neo4j_map_kentry(neo4j_string("room_uuid"),
+								  neo4j_ustring(room_uuid.c_str(),
+												static_cast<unsigned int>(room_uuid.length())));
+	neo4j_value_t params = neo4j_map(entries, numEntries);
+	neo4j_result_stream_t* results = execResultQuery(
+				m_connection,
+				"MATCH (r:room {uuid:$room_uuid})-[:CONTAINS]->(o:object) "
+				"RETURN o.uuid, o.name",
+				params);
+
+	neo4j_result_t* result = neo4j_fetch_next(results);
+	if(!result) {
+		description << "The room contains nothing. ";
+	}
+
+	description << genRoomObjCountDescription(room_uuid);
+
+	size_t cnt = 0;
+	while(result) {
+		neo4j_value_t o_uuid = neo4j_result_field(result, 0);
+		neo4j_value_t o_name = neo4j_result_field(result, 1);
+		char buf[64];
+		neo4j_tostring(o_uuid, buf, sizeof(buf));
+		std::string o_uuid_str(buf+1, std::strlen(buf)-2);
+		neo4j_tostring(o_name, buf, sizeof(buf));
+		std::string o_name_str(buf+1, std::strlen(buf)-2);
+
+		if(cnt == 0) { description << "One object is a "; }
+		else { description << "Another object this room contains is a "; }
+		description << o_name_str << ". ";
+		description << genObjectDescription(o_uuid_str, center);
+
+		result = neo4j_fetch_next(results);
+		cnt++;
+	}
+
+	neo4j_close_results(results);
+
+	return description.str();
+}
+
+std::string GraphMap::genRoomObjCountDescription(const std::string& uuid) const {
+	std::stringstream description;
+
+	const unsigned int numEntries = 1;
+	neo4j_map_entry_t entries[numEntries];
+
+	entries[0] = neo4j_map_kentry(neo4j_string("room_uuid"),
+								  neo4j_ustring(uuid.c_str(),
+												static_cast<unsigned int>(uuid.length())));
+	neo4j_value_t params = neo4j_map(entries, numEntries);
+	neo4j_result_stream_t* results = execResultQuery(
+				m_connection,
+				"MATCH (r:room {uuid:$room_uuid})-[:CONTAINS]->(o:object) "
+				"RETURN count(o)",
+				params);
+
+	neo4j_result_t* result = neo4j_fetch_next(results);
+	neo4j_value_t objCnt = neo4j_result_field(result, 0);
+	auto objCntVal = neo4j_int_value(objCnt);
+	description << "The room contains " << objCntVal << " object";
+	if(objCntVal > 1) { description << "s"; }
+
+	neo4j_close_results(results);
+	results = execResultQuery(
+				m_connection,
+				"MATCH (r:room {uuid:$room_uuid})-[:CONTAINS]->(o:object) "
+				"WITH DISTINCT o.name as ns "
+				"RETURN count(ns)",
+				params);
+
+	result = neo4j_fetch_next(results);
+	neo4j_value_t typeCnt = neo4j_result_field(result, 0);
+	auto typeCntVal = neo4j_int_value(typeCnt);
+	description << " of " << typeCntVal << " distinct categor";
+	if(objCntVal > 1) { description << "ies"; }
+	else { description << "y"; }
+	description << ". ";
+
+	return description.str();
+}
+
+std::string GraphMap::genObjectDescription(const std::string& uuid,
+										   const Eigen::Vector3f& center) const {
+	std::stringstream description;
+
+	const unsigned int numEntries = 1;
+	neo4j_map_entry_t entries[numEntries];
+
+	entries[0] = neo4j_map_kentry(neo4j_string("obj_uuid"),
+								  neo4j_ustring(uuid.c_str(),
+												static_cast<unsigned int>(uuid.length())));
+	neo4j_value_t params = neo4j_map(entries, numEntries);
+	neo4j_result_stream_t* results = execResultQuery(
+				m_connection,
+				"MATCH (o:object {uuid:$obj_uuid})-[:IS]->(a:attribute) "
+				"RETURN o.name, a.type, a.name",
+				params);
+
+	neo4j_result_t* result = neo4j_fetch_next(results);
+	std::vector<std::tuple<std::string, std::string, std::string>> attrs;
+	while(result) {
+		neo4j_value_t o_name = neo4j_result_field(result, 0);
+		neo4j_value_t a_type = neo4j_result_field(result, 1);
+		neo4j_value_t a_name = neo4j_result_field(result, 2);
+		char buf[64];
+		neo4j_tostring(o_name, buf, sizeof(buf));
+		std::string o_name_str(buf+1, std::strlen(buf)-2);
+		neo4j_tostring(a_type, buf, sizeof(buf));
+		std::string a_type_str(buf+1, std::strlen(buf)-2);
+		neo4j_tostring(a_name, buf, sizeof(buf));
+		std::string a_name_str(buf+1, std::strlen(buf)-2);
+
+		attrs.push_back({o_name_str, a_type_str, a_name_str});
+
+		result = neo4j_fetch_next(results);
+	}
+
+	neo4j_close_results(results);
+
+	if(attrs.empty()) {
+		return description.str();
+	}
+
+	std::string attrdesc = genAttributeDescription(std::get<2>(attrs[0]), std::get<1>(attrs[0]));
+	description << "The " << std::get<0>(attrs[0]) << " " << attrdesc;
+	if(attrs.size() > 2) {
+		for(size_t i = 1; i < attrs.size()-1; ++i) {
+			std::string attrdesc = genAttributeDescription(std::get<2>(attrs[i]), std::get<1>(attrs[i]));
+			description << ", " << attrdesc;
+		}
+		std::string attrdesc = genAttributeDescription(std::get<2>(attrs.back()), std::get<1>(attrs.back()));
+		description << " and " << attrdesc << ". ";
+	} else if(attrs.size() > 1) {
+		std::string attrdesc = genAttributeDescription(std::get<2>(attrs[1]), std::get<1>(attrs[1]));
+		description << " and " << attrdesc << ". ";
+	} else {
+		description << ". ";
+	}
+
+	std::string name = std::get<0>(attrs[0]);
+	description << genDescriptionFromOffsetRelation(uuid, name, center);
+
+	return description.str();
+}
+
+std::string GraphMap::genAttributeDescription(const std::string& name,
+											  const std::string& type) const {
+	std::stringstream description;
+	if(type == "Color") {
+		description << "is " << name;
+	} else if(type == "State") {
+		description << "is " << name;
+	} else if(type == "ScreenSize") {
+		description << "has " << name;
+	}
+	return description.str();
+}
+
+std::string GraphMap::genDescriptionFromOffsetRelation(const std::string& uuid,
+													   const std::string& name,
+													   const Eigen::Vector3f& center) const {
+	std::stringstream description;
+
+	const unsigned int numEntries = 1;
+	neo4j_map_entry_t entries[numEntries];
+
+	entries[0] = neo4j_map_kentry(neo4j_string("obj_uuid"),
+								  neo4j_ustring(uuid.c_str(),
+												static_cast<unsigned int>(uuid.length())));
+	neo4j_value_t params = neo4j_map(entries, numEntries);
+	neo4j_result_stream_t* results = execResultQuery(
+				m_connection,
+				"MATCH (o:object {uuid:$obj_uuid})-[off:OFFSET]->(oo:object) "
+				"RETURN o.pos_x, o.pos_y, o.pos_z, off.x, off.y, off.z, oo.name",
+				params);
+
+	neo4j_result_t* result = neo4j_fetch_next(results);
+	std::map<std::string, std::vector<std::string>> dirs;
+	while(result) {
+		neo4j_value_t pos_x = neo4j_result_field(result, 0);
+		neo4j_value_t pos_y = neo4j_result_field(result, 1);
+		neo4j_value_t pos_z = neo4j_result_field(result, 2);
+		neo4j_value_t off_x = neo4j_result_field(result, 3);
+		neo4j_value_t off_y = neo4j_result_field(result, 4);
+		neo4j_value_t off_z = neo4j_result_field(result, 5);
+		neo4j_value_t oo_name = neo4j_result_field(result, 6);
+		char buf[64];
+		neo4j_tostring(oo_name, buf, sizeof(buf));
+		std::string oo_name_str(buf+1, std::strlen(buf)-2);
+		Eigen::Vector3f objPos(0,0,0);
+		objPos.x() = neo4j_float_value(pos_x);
+		objPos.y() = neo4j_float_value(pos_y);
+		Eigen::Vector3f offset;
+		offset.x() = neo4j_float_value(off_x);
+		offset.y() = neo4j_float_value(off_y);
+		offset.z() = neo4j_float_value(off_z);
+		auto c2o = objPos - center;
+
+		dirs[dir2Str(c2o, offset)].push_back(oo_name_str);
+
+		result = neo4j_fetch_next(results);
+	}
+
+	neo4j_close_results(results);
+
+
+	for(auto& pair : dirs) {
+		auto& nObjects = pair.second;
+		if(nObjects.empty()) {
+			continue;
+		}
+
+		description << "The " << name << " is " << pair.first << " a " << nObjects.back();
+		nObjects.pop_back();
+		while(nObjects.size() > 1) {
+			description << ", a " << nObjects.back();
+			nObjects.pop_back();
+		}
+		if(nObjects.size() == 1) {
+			description << " and a " << nObjects.back();
+			nObjects.pop_back();
+		}
+		description << ". ";
+	}
+
+	return description.str();
+}
+
+Eigen::Vector3f GraphMap::getRoomCenter() const {
+	const unsigned int numEntries = 1;
+	neo4j_map_entry_t entries[numEntries];
+
+	std::string room_uuid = boost::uuids::to_string(m_room);
+	entries[0] = neo4j_map_kentry(neo4j_string("room_uuid"),
+								  neo4j_ustring(room_uuid.c_str(),
+												static_cast<unsigned int>(room_uuid.length())));
+	neo4j_value_t params = neo4j_map(entries, numEntries);
+	neo4j_result_stream_t* results = execResultQuery(
+				m_connection,
+				"MATCH (r:room {uuid:$room_uuid})-[:CONTAINS]->(o:object) "
+				"RETURN o.pos_x, o.pos_y, o.pos_z",
+				params);
+
+	neo4j_result_t* result = neo4j_fetch_next(results);
+	Eigen::Vector3f center(0,0,0);
+	size_t cnt = 0;
+	while(result) {
+		neo4j_value_t pos_x = neo4j_result_field(result, 0);
+		neo4j_value_t pos_y = neo4j_result_field(result, 1);
+		neo4j_value_t pos_z = neo4j_result_field(result, 2);
+		center.x() += neo4j_float_value(pos_x);
+		center.y() += neo4j_float_value(pos_y);
+		center.z() += neo4j_float_value(pos_z);
+		cnt++;
+
+		result = neo4j_fetch_next(results);
+	}
+
+	neo4j_close_results(results);
+
+	center /= cnt;
+	return center;
+}
+
 void GraphMap::execInsertQuery(neo4j_connection_t* conn,
 							   const std::string& query,
 							   const neo4j_value_t& params) {
@@ -570,14 +873,21 @@ std::string GraphMap::color2Str(const cv::Scalar& c) {
 	cv::Mat3f hsvMat;
 	cv::cvtColor(bgrMat, hsvMat, cv::COLOR_BGR2HSV);
 	cv::Vec3f hsv = hsvMat.at<cv::Vec3f>(0);
-	float h = hsv[0];
-	float s = hsv[1];
-	float v = hsv[2];
-	if(v < 100) {
-		return "black";
-	} else if(s < 50) {
-		return "white";
-	} else if((330 < h && h <= 360) || (0 < h && h <= 15)) { // red
+	float h = hsv[0];		// range [0, 360]
+	float s = hsv[1] / 255;	// range [0, 100]
+	float v = hsv[2] / 255;	// range [0, 100]
+
+	if(s < 25) {			// any gray value
+		if(v < 25) {
+			return "black";
+		} else if(v > 85) {
+			return "white";
+		}
+
+		return "gray";
+	}
+
+	if((330 < h && h <= 360) || (0 < h && h <= 15)) { // red
 		return "red";
 	} else if(15 < h && h <= 45) { // orange
 		return "orange";
@@ -596,6 +906,39 @@ std::string GraphMap::color2Str(const cv::Scalar& c) {
 	}
 
 	return "INVALID";
+}
+
+std::string GraphMap::dir2Str(const Eigen::Vector3f& watchDir,
+							  const Eigen::Vector3f& offset) {
+	auto nOff = offset.normalized();
+	auto nWatch = watchDir.normalized();
+
+	float dotUp = nOff.dot(Eigen::Vector3f(0,0,1));
+	float angUp = std::acos(dotUp) * 180 / M_PI;
+	if(0 <= angUp && angUp < 30) {
+		return "below";
+	} else if(180-30 < angUp && angUp <= 180) {
+		return "above";
+	}
+
+	float dotWatchDir = nOff.dot(nWatch);
+	float angWatchDir = std::acos(dotWatchDir) * 180 / M_PI;
+	if(0 <= angWatchDir && angWatchDir < 10) {
+		return "in front of";
+	} else if(180-10 < angWatchDir && angWatchDir <= 180) {
+		return "behind";
+	}
+
+	auto right = nWatch.cross(Eigen::Vector3f(0, 0, 1));
+	float dotRight = nOff.dot(right);
+	float angRight = std::acos(dotRight) * 180 / M_PI;
+	if(0 <= angRight && angRight < 90) {
+		return "left of";
+	} else if(90 <= angRight && angRight <= 180) {
+		return "right of";
+	}
+
+	return "REL_NOT_CONVERTIBLE";
 }
 
 void GraphMap::insertColor(const GraphMap::Detection& d,
@@ -621,7 +964,7 @@ void GraphMap::insertColor(const GraphMap::Detection& d,
 					"WHERE o.uuid = $uuid_d "
 					"CREATE (a:attribute {name: $col, type: $attr_type}) "
 					"CREATE (o)"
-					"-[:HAS]->"
+					"-[:IS]->"
 					"(a)",
 					params);
 }
@@ -641,9 +984,9 @@ void GraphMap::insertState(const GraphMap::Detection& d,
 												static_cast<unsigned int>(attrType.length())));
 	std::string state = color2Str(d.color);
 	if(state == "black") {
-		state = "Off";
+		state = "off";
 	} else {
-		state = "On";
+		state = "on";
 	}
 	entries[2] = neo4j_map_kentry(neo4j_string("state"),
 								  neo4j_ustring(state.c_str(),
@@ -654,7 +997,7 @@ void GraphMap::insertState(const GraphMap::Detection& d,
 					"WHERE o.uuid = $uuid_d "
 					"CREATE (a:attribute {name: $state, type: $attr_type}) "
 					"CREATE (o)"
-					"-[:HAS]->"
+					"-[:IS]->"
 					"(a)",
 					params);
 }
@@ -712,7 +1055,7 @@ void GraphMap::insertScreenSize(const GraphMap::Detection& d,
 					"WHERE o.uuid = $uuid_d "
 					"CREATE (a:attribute {name: $size, type: $attr_type}) "
 					"CREATE (o)"
-					"-[:HAS]->"
+					"-[:IS]->"
 					"(a)",
 					params);
 }
