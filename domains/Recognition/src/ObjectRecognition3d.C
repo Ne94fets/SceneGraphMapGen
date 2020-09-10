@@ -206,7 +206,7 @@ void ObjectRecognition3d::process() {
 	std::cout << "ObjectRecognition has registration data. Running in main loop now." << std::endl;
 
 	auto funStart = std::chrono::system_clock::now();
-	std::vector<std::pair<long, long>> durations;
+	std::vector<std::tuple<long, long, size_t>> durations;
 	while(!m_shutdown) {
 
 		// wait for a matching pair
@@ -223,13 +223,16 @@ void ObjectRecognition3d::process() {
 			std::cout << "ObjectRec process took: " << duration << "ms" << std::endl;
 		}
 
-		durations.push_back({std::chrono::duration_cast<std::chrono::milliseconds>(startTime - funStart).count(), duration});
+		durations.push_back({std::chrono::duration_cast<std::chrono::milliseconds>(startTime - funStart).count(),
+							 duration,
+							m_detections.size()});
 		if(durations.size() % 100 == 0) {
-			std::cout << "ObjectRec tracking: ";
+			std::ofstream out("ObjRecTrackTimes.txt");
+			out << "TS Duration DetCnt" << std::endl;
 			for(const auto& p : durations) {
-				std::cout << "(" << p.first << "," << p.second << ") ";
+				out << std::get<0>(p) << " " << std::get<1>(p) << " " << std::get<2>(p) << std::endl;
 			}
-			std::cout << std::endl;
+			out.close();
 		}
 	}
 }
@@ -286,11 +289,12 @@ void ObjectRecognition3d::backgroundProcess() {
 
 		durations.push_back({std::chrono::duration_cast<std::chrono::milliseconds>(startTime - funStart).count(), duration});
 		if(durations.size() % 10 == 0) {
-			std::cout << "ObjectRec detect: ";
+			std::ofstream out("ObjRecDetectTimes.txt");
+			out << "TS Duration" << std::endl;
 			for(const auto& p : durations) {
-				std::cout << "(" << p.first << "," << p.second << ") ";
+				out << p.first << " " << p.second << std::endl;
 			}
-			std::cout << std::endl;
+			out.close();
 		}
 
 		m_bgStatus = BackgroundStatus::DONE;
