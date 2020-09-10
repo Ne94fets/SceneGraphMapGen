@@ -376,7 +376,8 @@ void PointCloudRegistration::process() {
 
 	std::cout << "PointCloudRegistration has registration data. Running in main loop now." << std::endl;
 
-	std::vector<long> durations;
+	auto funStart = std::chrono::system_clock::now();
+	std::vector<std::pair<long, long>> durations;
 	while(!m_shutdown) {
 
 		// wait for a matching pair
@@ -394,13 +395,14 @@ void PointCloudRegistration::process() {
 			std::cout << "PCL process took: " << duration << "ms" << std::endl;
 		}
 
-		durations.push_back(duration);
-		float avg(0);
-		for(const auto d : durations) {
-			avg += float(d);
+		durations.push_back({std::chrono::duration_cast<std::chrono::milliseconds>(startTime - funStart).count(), duration});
+		if(durations.size() % 100 == 0) {
+			std::cout << "PCL tracking: ";
+			for(const auto& p : durations) {
+				std::cout << "(" << p.first << "," << p.second << ") ";
+			}
+			std::cout << std::endl;
 		}
-		avg /= durations.size();
-		std::cout << "PCL: Average tracking duration: " << avg << std::endl;
 	}
 }
 

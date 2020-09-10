@@ -156,7 +156,8 @@ private:
 
 	std::thread*	m_worker = nullptr;
 
-	std::vector<long> m_durations;
+	std::chrono::_V2::system_clock::time_point	m_funStart;
+	std::vector<std::pair<long, long>>			m_durations;
 
 	static DBFunMap dbFunMap;
 };
@@ -207,6 +208,7 @@ void GraphMap::initialize() {
 						  &GraphMap::onSynchronized,
 						  this,
 						  Duration::seconds(10));
+	m_funStart = std::chrono::system_clock::now();
 }
 
 void GraphMap::onSynchronized(ChannelRead<GraphMap::DetectionContainer> detections, ChannelRead<GraphMap::DetectionContainer> detectionsNew, ChannelRead<GraphMap::TransformType> globalPose) {
@@ -290,13 +292,14 @@ void GraphMap::analyseDetections(const DetectionContainer& detections,
 		std::cout << "GraphMap analyse took: " << duration << "ms" << std::endl;
 	}
 
-	m_durations.push_back(duration);
-	float avg(0);
-	for(const auto d : m_durations) {
-		avg += float(d);
+	m_durations.push_back({std::chrono::duration_cast<std::chrono::milliseconds>(startTime - m_funStart).count(), duration});
+	if(m_durations.size() % 100 == 0) {
+		std::cout << "GraphMap insert: ";
+		for(const auto& p : m_durations) {
+			std::cout << "(" << p.first << "," << p.second << ") ";
+		}
+		std::cout << std::endl;
 	}
-	avg /= m_durations.size();
-	std::cout << "GraphMap: Average insert duration: " << avg << std::endl;
 
 	std::cout << genRoomDescription() << std::endl;
 }

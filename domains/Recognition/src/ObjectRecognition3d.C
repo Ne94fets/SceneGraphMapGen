@@ -68,6 +68,7 @@ using recognitiondatatypes::TrackerGenerator;
 
 #define DEBUG_POS_HIST 0
 #define DEBUG_POS_SAMPLING 0
+#define DEBUG_BOXES 0
 #define DEBUG_BG_FG_TRACKING 0
 
 namespace tf = tensorflow;
@@ -204,7 +205,8 @@ void ObjectRecognition3d::process() {
 
 	std::cout << "ObjectRecognition has registration data. Running in main loop now." << std::endl;
 
-	std::vector<long> durations;
+	auto funStart = std::chrono::system_clock::now();
+	std::vector<std::pair<long, long>> durations;
 	while(!m_shutdown) {
 
 		// wait for a matching pair
@@ -221,18 +223,20 @@ void ObjectRecognition3d::process() {
 			std::cout << "ObjectRec process took: " << duration << "ms" << std::endl;
 		}
 
-		durations.push_back(duration);
-		float avg(0);
-		for(const auto d : durations) {
-			avg += float(d);
+		durations.push_back({std::chrono::duration_cast<std::chrono::milliseconds>(startTime - funStart).count(), duration});
+		if(durations.size() % 100 == 0) {
+			std::cout << "ObjectRec tracking: ";
+			for(const auto& p : durations) {
+				std::cout << "(" << p.first << "," << p.second << ") ";
+			}
+			std::cout << std::endl;
 		}
-		avg /= durations.size();
-		std::cout << "ObjectRec: Average tracking duration: " << avg << std::endl;
 	}
 }
 
 void ObjectRecognition3d::backgroundProcess() {
-	std::vector<long> durations;
+	auto funStart = std::chrono::system_clock::now();
+	std::vector<std::pair<long, long>> durations;
 	DetectionContainer newDetections;
 	while(!m_shutdown) {
 		std::vector<Detection> detections;
@@ -280,13 +284,14 @@ void ObjectRecognition3d::backgroundProcess() {
 //		m_bgDetections = detections;
 		bgDetectionsLock.unlock();
 
-		durations.push_back(duration);
-		float avg(0);
-		for(const auto d : durations) {
-			avg += float(d);
+		durations.push_back({std::chrono::duration_cast<std::chrono::milliseconds>(startTime - funStart).count(), duration});
+		if(durations.size() % 10 == 0) {
+			std::cout << "ObjectRec detect: ";
+			for(const auto& p : durations) {
+				std::cout << "(" << p.first << "," << p.second << ") ";
+			}
+			std::cout << std::endl;
 		}
-		avg /= durations.size();
-		std::cout << "ObjectRec: Average detection duration: " << avg << std::endl;
 
 		m_bgStatus = BackgroundStatus::DONE;
 	}
@@ -595,6 +600,7 @@ void ObjectRecognition3d::matchDetectionsIndependentGreedy(
 }
 
 void ObjectRecognition3d::debugDrawTrackedDetections(const ChannelPair& pair) {
+#if DEBUG_BOXES
 	for(size_t i = 0; i < m_detections.size(); ++i) {
 		const auto& d = m_detections[i];
 		cv::Scalar color(0, 0, 255);
@@ -659,6 +665,7 @@ void ObjectRecognition3d::debugDrawTrackedDetections(const ChannelPair& pair) {
 	auto wRGBMarked = m_channelRGBMarked.write();
 	wRGBMarked->sequenceID = pair.first.sequenceID;
 	wRGBMarked->value() = m_currentRGBMarked.clone();
+#endif
 }
 
 int32_t ObjectRecognition3d::readNumDetections(const std::vector<tensorflow::Tensor>& outputs) {
