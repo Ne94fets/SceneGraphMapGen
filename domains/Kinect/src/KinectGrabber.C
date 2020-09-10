@@ -51,7 +51,7 @@ using namespace mira;
 namespace kinect { 
 
 KinectGrabber::KinectGrabber()
-	: Unit(Duration::milliseconds(100)),
+	: Unit(Duration::milliseconds(16)),
 	  m_listener(libfreenect2::Frame::Color |
 				 libfreenect2::Frame::Ir |
 				 libfreenect2::Frame::Depth),
@@ -110,7 +110,7 @@ void KinectGrabber::initialize()
 }
 
 void KinectGrabber::process(const Timer& timer) {
-	if(!m_listener.waitForNewFrame(m_frames, 10)) { //m_pollTime.totalMilliseconds()))
+	if(!m_listener.waitForNewFrame(m_frames, this->getCycleTime().totalMilliseconds())) {
 		std::cout << "No new frames in this time frame" << std::endl;
 		return;
 	}
