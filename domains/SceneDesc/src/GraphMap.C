@@ -294,11 +294,12 @@ void GraphMap::analyseDetections(const DetectionContainer& detections,
 
 	m_durations.push_back({std::chrono::duration_cast<std::chrono::milliseconds>(startTime - m_funStart).count(), duration});
 	if(m_durations.size() % 100 == 0) {
-		std::cout << "GraphMap insert: ";
+		std::ofstream out("GraphMapInsertTimes.txt");
+		out << "TS Duration" << std::endl;
 		for(const auto& p : m_durations) {
-			std::cout << "(" << p.first << "," << p.second << ") ";
+			out << p.first << " " << p.second << std::endl;
 		}
-		std::cout << std::endl;
+		out.close();
 	}
 
 	std::cout << genRoomDescription() << std::endl;

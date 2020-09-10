@@ -397,11 +397,12 @@ void PointCloudRegistration::process() {
 
 		durations.push_back({std::chrono::duration_cast<std::chrono::milliseconds>(startTime - funStart).count(), duration});
 		if(durations.size() % 100 == 0) {
-			std::cout << "PCL tracking: ";
+			std::ofstream out("PCLTrackTimes.txt");
+			out << "TS Duration" << std::endl;
 			for(const auto& p : durations) {
-				std::cout << "(" << p.first << "," << p.second << ") ";
+				out << p.first << " " << p.second << std::endl;
 			}
-			std::cout << std::endl;
+			out.close();
 		}
 	}
 }
