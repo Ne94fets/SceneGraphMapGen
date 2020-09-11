@@ -219,9 +219,9 @@ void ObjectRecognition3d::process() {
 
 		auto endTime = std::chrono::system_clock::now();
 		auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
-		if(duration > 1000/30) {
-			std::cout << "ObjectRec process took: " << duration << "ms" << std::endl;
-		}
+//		if(duration > 1000/30) {
+//			std::cout << "ObjectRec process took: " << duration << "ms" << std::endl;
+//		}
 
 		durations.push_back({std::chrono::duration_cast<std::chrono::milliseconds>(startTime - funStart).count(),
 							 duration,
@@ -258,9 +258,9 @@ void ObjectRecognition3d::backgroundProcess() {
 		auto endTime = std::chrono::system_clock::now();
 		auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
 
-		if(duration > 1000/30) {
-			std::cout << "Detecting " << detections.size() << " took: " << duration << "ms" << std::endl;
-		}
+//		if(duration > 1000/30) {
+//			std::cout << "Detecting " << detections.size() << " took: " << duration << "ms" << std::endl;
+//		}
 
 		// set position and bbox, also put into new detections
 		auto wChannelNewDetections = m_channelNetDetections.write();
@@ -358,16 +358,16 @@ void ObjectRecognition3d::trackLastDetections(const ChannelPair& pair) {
 		if(trackSucess && box.height > 0 && box.width > 0) {
 			auto trackingEnd = std::chrono::system_clock::now();
 			auto trackingDuration = std::chrono::duration_cast<std::chrono::milliseconds>(trackingEnd - trackingStart).count();
-			if(trackingDuration > 1000/30) {
-				std::cout << "Tracking #" << i << " took: " << trackingDuration << "ms" << std::endl;
-			}
+//			if(trackingDuration > 1000/30) {
+//				std::cout << "Tracking #" << i << " took: " << trackingDuration << "ms" << std::endl;
+//			}
 
 			// clamp box
 			box = clampRect(img, box);
 
 			// tracked outside of the image if width and height are smaller than zero after clamping
 			if(box.width < 1 || box.height < 1) {
-				std::cout << "Tracked object #" << i << " is outside of image" << std::endl;
+//				std::cout << "Tracked object #" << i << " is outside of image" << std::endl;
 				continue;
 			}
 
@@ -392,8 +392,9 @@ void ObjectRecognition3d::trackLastDetections(const ChannelPair& pair) {
 //			}
 			auto trackingEnd = std::chrono::system_clock::now();
 			auto trackingDuration = std::chrono::duration_cast<std::chrono::milliseconds>(trackingEnd - trackingStart).count();
-			if(trackingDuration > 1000/30)
-				std::cout << "Tracking #" << i << " lost took: " << trackingDuration << "ms" << std::endl;
+//			if(trackingDuration > 1000/30) {
+//				std::cout << "Tracking #" << i << " lost took: " << trackingDuration << "ms" << std::endl;
+//			}
 		}
 	}
 
@@ -413,8 +414,9 @@ void ObjectRecognition3d::trackLastDetections(const ChannelPair& pair) {
 
 	auto trackingEnd = std::chrono::system_clock::now();
 	auto trackingDuration = std::chrono::duration_cast<std::chrono::milliseconds>(trackingEnd - trackingStart).count();
-	if(trackingDuration > 1000/30)
-		std::cout << "Tracking " << m_trackers.size() << " active detections took: " << trackingDuration << "ms" << std::endl;
+//	if(trackingDuration > 1000/30) {
+//		std::cout << "Tracking " << m_trackers.size() << " active detections took: " << trackingDuration << "ms" << std::endl;
+//	}
 }
 
 void ObjectRecognition3d::trackNewDetections(const ChannelPair& pair) {
@@ -542,8 +544,9 @@ void ObjectRecognition3d::trackNewDetections(const ChannelPair& pair) {
 
 	auto trackingEnd = std::chrono::system_clock::now();
 	auto trackingDuration = std::chrono::duration_cast<std::chrono::milliseconds>(trackingEnd - trackingStart).count();
-	if(trackingDuration > 1000/30)
-		std::cout << "Tracking " << m_trackers.size() << " background detections took: " << trackingDuration << "ms" << std::endl;
+//	if(trackingDuration > 1000/30) {
+//		std::cout << "Tracking " << m_trackers.size() << " background detections took: " << trackingDuration << "ms" << std::endl;
+//	}
 }
 
 void ObjectRecognition3d::matchDetectionsIndependentGreedy(

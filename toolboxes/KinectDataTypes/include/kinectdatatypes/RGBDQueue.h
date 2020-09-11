@@ -73,7 +73,7 @@ public:
 	template<typename TChannel>
 	static void dropTilID(std::queue<TChannel>& queue, size_t id) {
 		while(!queue.empty() && queue.front().sequenceID < id) {
-			std::cout << "No matching image. Dropping image. FrameNumber: " << queue.front().sequenceID << std::endl;
+//			std::cout << "No matching image. Dropping image. FrameNumber: " << queue.front().sequenceID << std::endl;
 			queue.pop();
 		}
 	}
@@ -94,9 +94,9 @@ private:
 			return;
 		}
 
-		if(m_currentPair) {
-			std::cout << "Skipping pair. FrameNumber: " << m_currentPair->first.sequenceID << std::endl;
-		}
+//		if(m_currentPair) {
+//			std::cout << "Skipping pair. FrameNumber: " << m_currentPair->first.sequenceID << std::endl;
+//		}
 
 		m_currentPair = std::make_pair(m_channel0Queue.front(), m_channel1Queue.front());
 		m_channel0Queue.pop();

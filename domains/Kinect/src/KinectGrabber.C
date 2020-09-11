@@ -111,7 +111,6 @@ void KinectGrabber::initialize()
 
 void KinectGrabber::process(const Timer& timer) {
 	if(!m_listener.waitForNewFrame(m_frames, this->getCycleTime().totalMilliseconds())) {
-		std::cout << "No new frames in this time frame" << std::endl;
 		return;
 	}
 

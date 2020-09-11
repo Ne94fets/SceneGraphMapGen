@@ -391,9 +391,9 @@ void PointCloudRegistration::process() {
 		auto endTime = std::chrono::system_clock::now();
 		auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
 
-		if(duration > 1000/30) {
-			std::cout << "PCL process took: " << duration << "ms" << std::endl;
-		}
+//		if(duration > 1000/30) {
+//			std::cout << "PCL process took: " << duration << "ms" << std::endl;
+//		}
 
 		durations.push_back({std::chrono::duration_cast<std::chrono::milliseconds>(startTime - funStart).count(), duration});
 		if(durations.size() % 100 == 0) {

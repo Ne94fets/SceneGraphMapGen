@@ -288,9 +288,9 @@ void GraphMap::analyseDetections(const DetectionContainer& detections,
 
 	auto endTime = std::chrono::system_clock::now();
 	auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
-	if(duration > 1000/30) {
-		std::cout << "GraphMap analyse took: " << duration << "ms" << std::endl;
-	}
+//	if(duration > 1000/30) {
+//		std::cout << "GraphMap analyse took: " << duration << "ms" << std::endl;
+//	}
 
 	m_durations.push_back({std::chrono::duration_cast<std::chrono::milliseconds>(startTime - m_funStart).count(), duration});
 	if(m_durations.size() % 100 == 0) {
