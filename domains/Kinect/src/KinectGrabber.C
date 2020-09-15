@@ -126,21 +126,23 @@ void KinectGrabber::process(const Timer& timer) {
 	libfreenect2::Frame* ir = m_frames[libfreenect2::Frame::Ir];
 	libfreenect2::Frame* depth = m_frames[libfreenect2::Frame::Depth];
 
-	// post full rgb image
+	// flip and convert full rgb image
 	cv::Mat rgbFull(rgb->height, rgb->width, CV_8UC4, rgb->data);
 	cv::Mat tmpRGBFull(rgbFull.rows, rgbFull.cols, CV_8UC3);
 	cv::cvtColor(rgbFull, tmpRGBFull, cv::COLOR_BGRA2BGR);
 	cv::flip(tmpRGBFull, m_imgRGBFull, 1);
 
+	// post full rgb image
 	ChannelWrite<RGBImgType> wRGBFull = m_channelRGBFull.write();
 	wRGBFull->sequenceID = m_frameNumber;
 	wRGBFull->timestamp = captureTime;
 	wRGBFull->value() = m_imgRGBFull;
 
-	// post ir image
+	// flip ir image
 	cv::Mat irMat(ir->height, ir->width, CV_32FC1, ir->data);
 	cv::flip(irMat, m_imgIR, 1);
 
+	// post ir image
 	ChannelWrite<DepthImgType> wIR = m_channelIR.write();
 	wIR->sequenceID = m_frameNumber;
 	wIR->timestamp = captureTime;
@@ -151,33 +153,35 @@ void KinectGrabber::process(const Timer& timer) {
 						  &m_undistortedDepth, &m_registeredRGB, true,
 						  &m_bigdepth);
 
-	// post undistorted depth image (depth mapped to rgb)
+	// flip undistorted depth image (depth mapped to rgb)
 	cv::Mat depthRaw(m_undistortedDepth.height, m_undistortedDepth.width,
 					 CV_32FC1, m_undistortedDepth.data);
 	cv::flip(depthRaw, m_imgDepth, 1);
 
+	// post undistorted depth image (depth mapped to rgb)
 	ChannelWrite<DepthImgType> wDepth = m_channelDepth.write();
 	wDepth->sequenceID = m_frameNumber;
 	wDepth->timestamp = captureTime;
 	wDepth->value() = m_imgDepth;
 
-	// post full depth image (depth mapped to rgb)
+	// flip full depth image (depth mapped to rgb)
 	cv::Mat bigDepth(m_bigdepth.height, m_bigdepth.width, CV_32FC1, m_bigdepth.data);
-	//bigDepth.copyTo(m_imgDepthFull);
 	cv::flip(bigDepth, m_imgDepthFull, 1);
 
+	// post full depth image (depth mapped to rgb)
 	ChannelWrite<DepthImgType> wDepthFull = m_channelDepthFull.write();
 	wDepthFull->sequenceID = m_frameNumber;
 	wDepthFull->timestamp = captureTime;
 	wDepthFull->value() = m_imgDepthFull;
 
-	// post registered rgb image (rgb mapped to depth)
+	// convert and flip registered rgb image (rgb mapped to depth)
 	cv::Mat bgrxReg(m_registeredRGB.height, m_registeredRGB.width,
 					CV_8UC4, m_registeredRGB.data);
 	cv::Mat tmpRGB(bgrxReg.rows, bgrxReg.cols, CV_8UC3);
 	cv::cvtColor(bgrxReg, tmpRGB, cv::COLOR_BGRA2BGR);
 	cv::flip(tmpRGB, m_imgRGB, 1);
 
+	// post registered rgb image (rgb mapped to depth)
 	ChannelWrite<RGBImgType> wRGB = m_channelRGB.write();
 	wRGB->sequenceID = m_frameNumber;
 	wRGB->timestamp = captureTime;
