@@ -47,6 +47,7 @@
 #include "ObjectRecognition3d.h"
 
 #include <assert.h>
+#include <pthread.h>
 
 #include <algorithm>
 #include <exception>
@@ -67,8 +68,7 @@ using kinectdatatypes::RGBDOperations;
 using recognitiondatatypes::TrackerGenerator;
 
 #define DEBUG_POS_HIST 0
-#define DEBUG_POS_SAMPLING 0
-#define DEBUG_BOXES 0
+#define DEBUG_POS_SAMPLING 1
 #define DEBUG_BG_FG_TRACKING 0
 
 namespace tf = tensorflow;
@@ -141,6 +141,9 @@ void ObjectRecognition3d::initialize() {
 	subscribe<RGBImgType>("RGBImageFull", &ObjectRecognition3d::onNewRGBImage);
 	subscribe<DepthImgType>("DepthImageFull", &ObjectRecognition3d::onNewDepthImage);
 
+	// only for debug AABBs
+	subscribe<TransformType>("PCGlobalTransform", &ObjectRecognition3d::onGlobalCameraPose);
+
 	// TODO: subscribe and publish all required channels
 	//subscribe<Pose2>("Pose", &ObjectRecognition3d::onPoseChanged);
 	//mChannel = publish<Img<>>("Image");
@@ -151,6 +154,9 @@ void ObjectRecognition3d::initialize() {
 	m_channelLostDetections = publish<DetectionContainer>("ObjectDetectionLost");
 
 	publishService(*this);
+
+	m_net = cv::dnn::readNet("external/models/YOLO/yolov3.weights",
+							 "external/models/YOLO/yolov3.cfg");
 
 	if(!m_trackThread) {
 		m_trackThread = new std::thread([this](){ process(); });
@@ -198,7 +204,13 @@ void ObjectRecognition3d::onNewDepthImage(
 	m_rgbdQueue.push1(image);
 }
 
+void ObjectRecognition3d::onGlobalCameraPose(ChannelRead<TransformType> globalPose) {
+	m_camera2World = *globalPose;
+	m_world2Camera = m_camera2World.inverse();
+}
+
 void ObjectRecognition3d::process() {
+	pthread_setname_np(pthread_self(), "ObjRec");
 	while(!m_shutdown && !m_hasRegData) {
 		std::this_thread::sleep_for(std::chrono::milliseconds(1));
 	}
@@ -238,6 +250,7 @@ void ObjectRecognition3d::process() {
 }
 
 void ObjectRecognition3d::backgroundProcess() {
+	pthread_setname_np(pthread_self(), "ObjRecBg");
 	auto funStart = std::chrono::system_clock::now();
 	std::vector<std::pair<long, long>> durations;
 	DetectionContainer newDetections;
@@ -607,7 +620,10 @@ void ObjectRecognition3d::matchDetectionsIndependentGreedy(
 }
 
 void ObjectRecognition3d::debugDrawTrackedDetections(const ChannelPair& pair) {
-#if DEBUG_BOXES
+	if(!m_debugDrawBoxes) {
+		return;
+	}
+
 	for(size_t i = 0; i < m_detections.size(); ++i) {
 		const auto& d = m_detections[i];
 		cv::Scalar color(0, 0, 255);
@@ -630,7 +646,10 @@ void ObjectRecognition3d::debugDrawTrackedDetections(const ChannelPair& pair) {
 		}
 
 		// draw AABB
-		drawAABB(m_currentRGBMarked, d, m_regData);
+		if(m_debugDrawAABB) {
+			// global pose not matching m_currentRGBMarked but good enought for debug drawing
+			drawAABB(m_currentRGBMarked, d, m_regData, m_camera2World, m_world2Camera);
+		}
 
 		// draw label
 		std::stringstream topText;
@@ -672,36 +691,6 @@ void ObjectRecognition3d::debugDrawTrackedDetections(const ChannelPair& pair) {
 	auto wRGBMarked = m_channelRGBMarked.write();
 	wRGBMarked->sequenceID = pair.first.sequenceID;
 	wRGBMarked->value() = m_currentRGBMarked.clone();
-#endif
-}
-
-int32_t ObjectRecognition3d::readNumDetections(const std::vector<tensorflow::Tensor>& outputs) {
-	return static_cast<int32_t>(outputs[0].flat<float>().data()[0]);
-}
-
-cv::Rect2f ObjectRecognition3d::readDetectionRect(const std::vector<tensorflow::Tensor>& outputs, int32_t idx) {
-	float ymin = outputs[1].flat<float>().data()[idx * 4 + 0];
-	float xmin = outputs[1].flat<float>().data()[idx * 4 + 1];
-	float ymax = outputs[1].flat<float>().data()[idx * 4 + 2];
-	float xmax = outputs[1].flat<float>().data()[idx * 4 + 3];
-
-	return cv::Rect2f(xmin, ymin, xmax - xmin, ymax - ymin);
-}
-
-float ObjectRecognition3d::readDetectionConfidence(const std::vector<tensorflow::Tensor>& outputs, int32_t idx) {
-	return outputs[2].flat<float>().data()[idx];
-}
-
-int ObjectRecognition3d::readDetectionType(const std::vector<tensorflow::Tensor>& outputs, int32_t idx) {
-	return static_cast<int>(outputs[3].flat<float>().data()[idx]);
-}
-
-ObjectRecognition3d::Detection ObjectRecognition3d::readDetection(const std::vector<tensorflow::Tensor>& outputs, int32_t idx) {
-	Detection d;
-	d.box = readDetectionRect(outputs, idx);
-	d.confidence = readDetectionConfidence(outputs, idx);
-	d.type = readDetectionType(outputs, idx);
-	return d;
 }
 
 void ObjectRecognition3d::updateDetection(ObjectRecognition3d::Detection& toUpdate, const ObjectRecognition3d::Detection& data) {
@@ -895,8 +884,18 @@ cv::Point3f ObjectRecognition3d::calcPosition(const ChannelPair& pair,
 		}
 		std::vector<int> labels;
 		std::vector<cv::Vec3f> outColors;
-		cv::kmeans(colors, 1, labels, cv::TermCriteria(cv::TermCriteria::EPS + cv::TermCriteria::COUNT, 10, 0.1), 10, cv::KmeansFlags::KMEANS_RANDOM_CENTERS, outColors);
-		*color = outColors[0];
+		size_t k = 3;
+		if(colors.size() >= k) {
+			cv::kmeans(colors, k, labels, cv::TermCriteria(cv::TermCriteria::EPS + cv::TermCriteria::COUNT, 10, 0.1), 10, cv::KmeansFlags::KMEANS_RANDOM_CENTERS, outColors);
+			std::vector<size_t> labCnt(k, 0);
+			for(int lab : labels) {
+				labCnt[lab]++;
+			}
+			size_t maxElemIdx = std::distance(labCnt.begin(), std::max_element(labCnt.begin(), labCnt.end()));
+			*color = outColors[maxElemIdx];
+		} else {
+			*color = colors.front();
+		}
 	}
 	center /= float(q3 - q1);
 
@@ -905,14 +904,10 @@ cv::Point3f ObjectRecognition3d::calcPosition(const ChannelPair& pair,
 		cv::Size sizeAdd(0,0);// = rrect.size()/4;
 		cv::Rect bigRect = clampRect(m_currentRGBMarked, rrect - cv::Point(sizeAdd.width, sizeAdd.height) + sizeAdd*2);
 		cv::Mat imgHistRoi = m_currentRGBMarked(bigRect);
-//		cv::Mat imgHistPair(std::max(histHeight, imgHistRoi.rows), histWidth + imgHistRoi.cols, CV_8UC3, cv::Scalar(0,0,0));
-//		imgHistRoi.copyTo(imgHistPair(cv::Rect(0, 0, imgHistRoi.cols, imgHistRoi.rows)));
-//		histImage.copyTo(imgHistPair(cv::Rect(imgHistRoi.cols, 0, histImage.cols, histImage.rows)));
 		cv::imshow("Depth Histogram Image", imgHistRoi);
 		cv::imwrite("DepthHistImg.png", imgHistRoi);
 		cv::imshow("Depth Histogram", histImage);
 		size_t i = 0;
-//		cv::imshow("Depth Histogramm", imgHistPair);
 	}
 #endif
 
@@ -975,6 +970,35 @@ float ObjectRecognition3d::overlapPercentage(const cv::Rect2f& r0, const cv::Rec
 	return std::max(unionArea / r0.area(), unionArea / r1.area());
 }
 
+int32_t ObjectRecognition3d::readNumDetections(const std::vector<tensorflow::Tensor>& outputs) {
+	return static_cast<int32_t>(outputs[0].flat<float>().data()[0]);
+}
+
+cv::Rect2f ObjectRecognition3d::readDetectionRect(const std::vector<tensorflow::Tensor>& outputs, int32_t idx) {
+	float ymin = outputs[1].flat<float>().data()[idx * 4 + 0];
+	float xmin = outputs[1].flat<float>().data()[idx * 4 + 1];
+	float ymax = outputs[1].flat<float>().data()[idx * 4 + 2];
+	float xmax = outputs[1].flat<float>().data()[idx * 4 + 3];
+
+	return cv::Rect2f(xmin, ymin, xmax - xmin, ymax - ymin);
+}
+
+float ObjectRecognition3d::readDetectionConfidence(const std::vector<tensorflow::Tensor>& outputs, int32_t idx) {
+	return outputs[2].flat<float>().data()[idx];
+}
+
+int ObjectRecognition3d::readDetectionType(const std::vector<tensorflow::Tensor>& outputs, int32_t idx) {
+	return static_cast<int>(outputs[3].flat<float>().data()[idx]);
+}
+
+ObjectRecognition3d::Detection ObjectRecognition3d::readDetection(const std::vector<tensorflow::Tensor>& outputs, int32_t idx) {
+	Detection d;
+	d.box = readDetectionRect(outputs, idx);
+	d.confidence = readDetectionConfidence(outputs, idx);
+	d.type = readDetectionType(outputs, idx);
+	return d;
+}
+
 ObjectRecognition3d::DetectionContainer ObjectRecognition3d::readDetections(
 		const std::vector<tensorflow::Tensor>& outputs,
 		const ChannelPair& pair) {
@@ -991,16 +1015,76 @@ ObjectRecognition3d::DetectionContainer ObjectRecognition3d::readDetections(
 		// update values dependend on new box
 		updateDetectionBox(d, pair, d.box, m_bgCalcPositionBuffer, true);
 
-		// save detection to array and post it to channel
+		// save detection to array
 		detections.push_back(d);
 	}
 
 	return detections;
 }
 
-std::vector<ObjectRecognition3d::Detection> ObjectRecognition3d::detect(const ChannelPair& pair) {
+
+ObjectRecognition3d::DetectionContainer ObjectRecognition3d::readDetectionsYOLO(
+		const std::vector<cv::Mat>& outs,
+		const ChannelPair& pair) {
+	DetectionContainer detections;
+	for (size_t i = 0; i < outs.size(); ++i) {
+		// Network produces output blob with a shape NxC where N is a number of
+		// detected objects and C is a number of classes + 4 where the first 4
+		// numbers are [center_x, center_y, width, height]
+		float* data = (float*)outs[i].data;
+		for (int j = 0; j < outs[i].rows; ++j, data += outs[i].cols) {
+			// start at 5, index 4 is background class
+			cv::Mat scores = outs[i].row(j).colRange(5, outs[i].cols);
+			cv::Point classIdPoint;
+			double confidence;
+			cv::minMaxLoc(scores, 0, &confidence, 0, &classIdPoint);
+			if (confidence > 0.5) {
+				float centerX = data[0];
+				float centerY = data[1];
+				float width = data[2];
+				float height = data[3];
+				float left = centerX - width / 2;
+				float top = centerY - height / 2;
+
+				Detection d;
+				d.type = classIdPoint.x+1; // classes start at 1
+				d.confidence = static_cast<float>(confidence);
+				d.box = cv::Rect2f(left, top, width, height);
+
+				// update values dependend on new box
+				updateDetectionBox(d, pair, d.box, m_bgCalcPositionBuffer, true);
+
+				// save detection to array
+				detections.push_back(d);
+			}
+		}
+	}
+	return detections;
+}
+
+ObjectRecognition3d::DetectionContainer ObjectRecognition3d::detect(const ChannelPair& pair) {
 	auto& rgbImage = pair.first[0];
 	auto imgSize = rgbImage.size();
+
+	if(m_detectUsingYOLO) {
+		static std::vector<std::string> outNames;
+
+		if(outNames.empty()) {
+			outNames = m_net.getUnconnectedOutLayersNames();
+		}
+
+		static cv::Mat blob;
+		// Create a 4D blob from a frame.
+		cv::dnn::blobFromImage(rgbImage.getMat(), blob, 1.0, cv::Size(608, 608), cv::Scalar(), false, false, CV_8U);
+
+		// Run a model.
+		m_net.setInput(blob, "", 1.0/255);
+
+		std::vector<cv::Mat> outs;
+		m_net.forward(outs, outNames);
+
+		return readDetectionsYOLO(outs, pair);
+	}
 
 	tf::Tensor inTensor(tf::DataType::DT_UINT8,
 						tf::TensorShape({1, imgSize.height(), imgSize.width(), 3}),
@@ -1041,16 +1125,19 @@ cv::Rect2d ObjectRecognition3d::clampRect(const Img<>& image, const cv::Rect2d& 
 	return cv::Rect2d(x0, y0, x1-x0, y1-y0);
 }
 
-
 void ObjectRecognition3d::drawAABB(cv::Mat& img, const Detection& d,
-								   const RegistrationData& regData) {
+								   const RegistrationData& regData,
+								   const TransformType& camera2world,
+								   const TransformType& world2Camera) {
 	const float cx = regData.rgb_p.cx;
 	const float cy = regData.rgb_p.cy;
 	const float fracfx = 1/regData.rgb_p.fx;
 	const float fracfy = 1/regData.rgb_p.fy;
 
-	cv::Point3f gMin = d.pos + d.bboxMin;
-	cv::Point3f gMax = d.pos + d.bboxMax;
+	Eigen::Vector4f pos = camera2world * Eigen::Vector4f(d.pos.x, d.pos.y, d.pos.z, 1);
+
+	cv::Point3f gMin = cv::Point3f(pos.x(), pos.y(), pos.z()) + d.bboxMin;
+	cv::Point3f gMax = cv::Point3f(pos.x(), pos.y(), pos.z()) + d.bboxMax;
 
 	std::vector<cv::Point3f> boxPoints;
 	boxPoints.reserve(8);
@@ -1068,8 +1155,9 @@ void ObjectRecognition3d::drawAABB(cv::Mat& img, const Detection& d,
 	imgPoints.reserve(8);
 
 	for(const auto& p : boxPoints) {
+		auto tp = world2Camera * Eigen::Vector4f(p.x, p.y, p.z, 1);
 		cv::Point2f imgP;
-		if(!RGBDOperations::getRowCol(p.x, p.y, p.z, cx, cy, fracfx, fracfy, imgP.y, imgP.x)) {
+		if(!RGBDOperations::getRowCol(tp.x(), tp.y(), tp.z(), cx, cy, fracfx, fracfy, imgP.y, imgP.x)) {
 			return;
 		}
 		imgPoints.push_back(imgP);

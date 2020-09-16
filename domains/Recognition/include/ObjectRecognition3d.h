@@ -62,6 +62,7 @@
 #include <kinectdatatypes/RGBDQueue.h>
 
 #include <opencv2/tracking.hpp>
+#include <opencv2/dnn.hpp>
 
 using namespace mira;
 
@@ -98,6 +99,8 @@ public:
 
 	typedef std::tuple<int, int, float>	ImgDepthPoint;
 
+	typedef Eigen::Matrix4f	TransformType;
+
 public:
 	ObjectRecognition3d();
 	virtual ~ObjectRecognition3d();
@@ -108,6 +111,9 @@ public:
 
 		// TODO: reflect all parameters (members and properties) that specify the persistent state of the unit
 		//r.property("Param1", mParam1, "First parameter of this unit with default value", 123.4f);
+		r.property("DebugBoxes", m_debugDrawBoxes, "Draw debug detection boxes", false);
+		r.property("DebugAABB", m_debugDrawAABB, "Draw debug AABB of detections", false);
+		r.property("DetectWithYOLO", m_detectUsingYOLO, "Detect objects using YOLO model", false);
 		//r.member("Param2", mParam2, setter(&ObjectRecognition3d::setParam2,this), "Second parameter with setter");
 	}
 
@@ -118,6 +124,9 @@ private:
 	void onRegistrationData(ChannelRead<RegistrationData> data);
 	void onNewRGBImage(ChannelRead<RGBImgType> image);
 	void onNewDepthImage(ChannelRead<DepthImgType> image);
+
+	// used for debug drawing only
+	void onGlobalCameraPose(ChannelRead<TransformType> globalPose);
 
 	void process();
 	void backgroundProcess();
@@ -131,11 +140,6 @@ private:
 
 	void debugDrawTrackedDetections(const ChannelPair& pair);
 
-	int32_t		readNumDetections(const std::vector<tf::Tensor>& outputs);
-	cv::Rect2f	readDetectionRect(const std::vector<tf::Tensor>& outputs, int32_t idx);
-	float		readDetectionConfidence(const std::vector<tf::Tensor>& outputs, int32_t idx);
-	int			readDetectionType(const std::vector<tf::Tensor>& outputs, int32_t idx);
-	Detection	readDetection(const std::vector<tf::Tensor>& outputs, int32_t idx);
 
 	void	updateDetection(Detection& toUpdate, const Detection& data);
 	void	updateDetectionBox(Detection& d, const ChannelPair& pair,
@@ -148,17 +152,29 @@ private:
 	cv::Scalar			calcColor(const ChannelPair& pair, const cv::Rect2f& rect);
 	void				calcBBox(Detection& d, const ChannelPair& pair, const cv::Rect2f& box);
 	float				overlapPercentage(const cv::Rect2f& r0, const cv::Rect2f& r1);
+
+	int32_t		readNumDetections(const std::vector<tf::Tensor>& outputs);
+	cv::Rect2f	readDetectionRect(const std::vector<tf::Tensor>& outputs, int32_t idx);
+	float		readDetectionConfidence(const std::vector<tf::Tensor>& outputs, int32_t idx);
+	int			readDetectionType(const std::vector<tf::Tensor>& outputs, int32_t idx);
+	Detection	readDetection(const std::vector<tf::Tensor>& outputs, int32_t idx);
+
 	DetectionContainer	readDetections(const std::vector<tf::Tensor>& outputs,
 									   const ChannelPair& pair);
+	DetectionContainer	readDetectionsYOLO(const std::vector<cv::Mat>& outs,
+										   const ChannelPair& pair);
 
-	std::vector<Detection> detect(const ChannelPair& pair);
+	DetectionContainer detect(const ChannelPair& pair);
 
 	// void onPoseChanged(ChannelRead<Pose2> pose);
 
 	// void setPose(const Pose2& pose);
 
 	static cv::Rect2d	clampRect(const Img<>& image, const cv::Rect2d& rect);
-	static void			drawAABB(cv::Mat& img, const Detection& d, const RegistrationData& regData);
+	static void			drawAABB(cv::Mat& img, const Detection& d,
+								 const RegistrationData& regData,
+								 const TransformType& camera2world,
+								 const TransformType& world2Camera);
 
 private:
 	enum class BackgroundStatus {
@@ -172,6 +188,7 @@ private:
 	float	m_overlappingThreshold = 0.5f;
 	float	m_confidenceThreshold = 0.5f;
 	int		m_sampleGridSize = 100;
+	bool	m_detectUsingYOLO = false;
 
 	RGBImgType						m_currentRGBMarked;
 	Channel<RGBImgType>				m_channelRGBMarked;
@@ -183,6 +200,7 @@ private:
 	SyncQueueType	m_rgbdQueue;
 
 	tf::Session*	m_session = nullptr;
+	cv::dnn::Net	m_net;
 
 	RegistrationData	m_regData;
 	volatile bool		m_hasRegData = false;
@@ -207,6 +225,12 @@ private:
 
 	DetectionContainer					m_detections;
 	std::vector<cv::Ptr<cv::Tracker>>	m_trackers;
+
+	// used for debug drawing only
+	bool			m_debugDrawBoxes = false;
+	bool			m_debugDrawAABB = false;
+	TransformType	m_world2Camera = TransformType::Identity();
+	TransformType	m_camera2World = TransformType::Identity();
 };
 
 } // namespace recognition
