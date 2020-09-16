@@ -127,6 +127,9 @@ private:
 	std::string genDescriptionFromOffsetRelation(const std::string& uuid,
 												 const std::string& name,
 												 const Eigen::Vector3f& center) const;
+	std::string genRouteDescription() const;
+	std::string genRouteEdgeDescription(const neo4j_value_t& src, const neo4j_value_t& tgt) const;
+
 	Eigen::Vector3f getRoomCenter() const;
 
 	static void execInsertQuery(neo4j_connection_t* conn,
@@ -138,6 +141,8 @@ private:
 	static neo4j_result_stream_t* execResultQuery(neo4j_connection_t* conn,
 												  const std::string& query,
 												  const neo4j_value_t& params);
+
+	static std::string neo4jValue2String(const neo4j_value_t& val);
 
 	static std::string color2Str(const cv::Scalar& c);
 	static std::string dir2Str(const Eigen::Vector3f& watchDir, const Eigen::Vector3f& offset);
@@ -200,6 +205,8 @@ void GraphMap::initialize() {
 
 	// add first room
 	addRoom(m_room);
+
+	std::cout << genRouteDescription() << std::endl;
 
 	m_syncQueue.subscribe(*this,
 						  "ObjectDetection",
@@ -428,9 +435,46 @@ void GraphMap::addRoom(const boost::uuids::uuid& room) {
 
 	neo4j_value_t params = neo4j_map(entries, numEntries);
 	execInsertQuery(m_connection,
-					"CREATE (:room {"
+					"CREATE (r:room {"
 					"uuid: $uuid, "
-					"name: 'Room'})",
+					"name: 'Room'})<-[:CONTAINS]-"
+					"(f3:floor {name:'3rd floor'})-[:CONTAINS]->"
+					"(c31:corridor {name:'corridor'})-[:CONNECTED {dir:'west'}]->"
+					"(c3c:corridor_crossing {name:'crossing'})-[:CONNECTED {dir:'south'}]->"
+					"(c32:corridor {name:'corridor'})-[:CONNECTED {dir:'north'}]->"
+					"(c3c)-[:CONNECTED {dir:'east'}]->(c31), "
+					"(f3)-[:CONTAINS]->(c3c), "
+					"(f3)-[:CONTAINS]->(c32), "
+					"(c31)-[:CONNECTED {dir:'south'}]->"
+					"(dRoom:door {name:'BIX Lab'})-[:CONNECTED {dir:'south'}]->"
+					"(r)-[:CONNECTED {dir:'north'}]->"
+					"(dRoom)-[:CONNECTED {dir:'north'}]->(c31), "
+					"(f3)-[:CONTAINS]->(dRoom), "
+					"(f2:floor {name:'2nd floor'})-[:CONTAINS]->"
+					"(c21:corridor {name:'corridor'})-[:CONNECTED {dir:'west'}]->"
+					"(c2c:corridor_crossing {name:'crossing'})-[:CONNECTED {dir:'south'}]->"
+					"(c22:corridor {name:'corridor'})-[:CONNECTED {dir:'north'}]->"
+					"(c2c)-[:CONNECTED {dir:'east'}]->(c21),"
+					"(f2)-[:CONTAINS]->(c2c), "
+					"(f2)-[:CONTAINS]->(c22), "
+					"(c21)-[:STAIRS {dir:'upwards'}]->(c31), "
+					"(c31)-[:STAIRS {dir:'downwards'}]->(c21), "
+					"(c22)-[:STAIRS {dir:'upwards'}]->(c32), "
+					"(c32)-[:STAIRS {dir:'downwards'}]->(c22), "
+					"(f1:floor {name:'1st floor'})-[:CONTAINS]->"
+					"(c11:corridor {name:'corridor'})-[:CONNECTED {dir:'west'}]->"
+					"(c1c:corridor_crossing {name:'crossing'})-[:CONNECTED {dir:'south'}]->"
+					"(c12:corridor {name:'corridor'})-[:CONNECTED {dir:'north'}]->"
+					"(c1c)-[:CONNECTED {dir:'east'}]->(c11), "
+					"(c11)-[:STAIRS {dir:'upwards'}]->(c21), "
+					"(c21)-[:STAIRS {dir:'downwards'}]->(c11), "
+					"(c12)-[:STAIRS {dir:'upwards'}]->(c22), "
+					"(c22)-[:STAIRS {dir:'downwards'}]->(c12), "
+					"(f1)-[:CONTAINS]->(c1c), "
+					"(f1)-[:CONTAINS]->(c12), "
+					"(c11)-[:CONNECTED {dir:'east'}]->"
+					"(dEn:door {name:'entrance'})-[:CONNECTED {dir:'west'}]->(c11),"
+					"(f1)-[:CONTAINS]->(dEn)",
 					params);
 }
 
@@ -588,7 +632,8 @@ std::string GraphMap::genRoomDescription() const {
 		std::string o_name_str(buf+1, std::strlen(buf)-2);
 
 		if(cnt == 0) { description << "One object is a "; }
-		else { description << "Another object this room contains is a "; }
+		else if (cnt%2 == 1) { description << "Another object this room contains is a "; }
+		else { description << "This room also contains a "; }
 		description << o_name_str << ". ";
 		description << genObjectDescription(o_uuid_str, center);
 
@@ -789,6 +834,119 @@ std::string GraphMap::genDescriptionFromOffsetRelation(const std::string& uuid,
 	return description.str();
 }
 
+std::string GraphMap::genRouteDescription() const {
+	std::stringstream description;
+
+	const unsigned int numEntries = 1;
+	neo4j_map_entry_t entries[numEntries];
+
+	std::string uuidStr = boost::uuids::to_string(m_room);
+	entries[0] = neo4j_map_kentry(neo4j_string("uuid"),
+								  neo4j_ustring(uuidStr.c_str(),
+												static_cast<unsigned int>(uuidStr.length())));
+	neo4j_value_t params = neo4j_map(entries, numEntries);
+	neo4j_result_stream_t* results = execResultQuery(
+				m_connection,
+				"MATCH (start:door {name:'entrance'}), (end:room {uuid:$uuid}) "
+				"CALL gds.alpha.shortestPath.stream({ "
+				"	startNode: start, "
+				"	endNode:end, "
+				"	nodeProjection: ['corridor','corridor_crossing','room','door'], "
+				"	relationshipProjection:{ "
+				"		CONNECTED: {type: 'CONNECTED', orientation:'NATURAL'}, "
+				"		STAIRS: {type:'STAIRS', orientation:'NATURAL'}} "
+				"	}) "
+				"YIELD nodeId "
+				"RETURN nodeId, gds.util.asNode(nodeId).name AS name",
+				params);
+
+	neo4j_result_t* result = neo4j_fetch_next(results);
+	std::vector<std::pair<neo4j_value_t, std::string>> nodeIds;
+	while(result) {
+		neo4j_value_t idValue = neo4j_result_field(result, 0);
+		std::string name = neo4jValue2String(neo4j_result_field(result, 1));
+		nodeIds.push_back({idValue, name});
+		result = neo4j_fetch_next(results);
+	}
+
+	neo4j_close_results(results);
+
+	description << "To get from the " << nodeIds.front().second
+				<< " to the " << nodeIds.back().second << " ";
+	for(size_t i = 1; i < nodeIds.size(); ++i) {
+		neo4j_value_t& source = nodeIds[i-1].first;
+		neo4j_value_t& target = nodeIds[i].first;
+		description << genRouteEdgeDescription(source, target);
+		if(i < nodeIds.size()-1) {
+			if(i%3 == 1) {
+				description << "Then ";
+			} else if(i%3 == 2) {
+				description << "Afterwards ";
+			} else {
+				description << "Next ";
+			}
+		}
+	}
+
+	return description.str();
+}
+
+std::string GraphMap::genRouteEdgeDescription(const neo4j_value_t& src, const neo4j_value_t& tgt) const {
+	std::stringstream description;
+
+	const unsigned int numEntries = 2;
+	neo4j_map_entry_t entries[numEntries];
+
+	entries[0] = neo4j_map_kentry(neo4j_string("src_id"), src);
+	entries[1] = neo4j_map_kentry(neo4j_string("tgt_id"), tgt);
+	neo4j_value_t params = neo4j_map(entries, numEntries);
+	neo4j_result_stream_t* results = execResultQuery(
+				m_connection,
+				"MATCH (src)-[e]->(tgt)<-[:CONTAINS]-(f:floor) "
+				"WHERE id(src)=$src_id AND id(tgt)=$tgt_id "
+				"RETURN src.name, type(e), e.dir, tgt.name, labels(tgt), f.name",
+				params);
+
+	neo4j_result_t* result = neo4j_fetch_next(results);
+	std::map<std::string, std::vector<std::string>> dirs;
+	while(result) {
+		bool changedFloor = false;
+		std::string src_name = neo4jValue2String(neo4j_result_field(result, 0));
+		std::string e_label = neo4jValue2String(neo4j_result_field(result, 1));
+		std::string e_dir = neo4jValue2String(neo4j_result_field(result, 2));
+		std::string tgt_name = neo4jValue2String(neo4j_result_field(result, 3));
+		std::string tgt_label = neo4jValue2String(neo4j_list_get(neo4j_result_field(result, 4), 0));
+		std::string floor_name = neo4jValue2String(neo4j_result_field(result, 5));
+
+		if(tgt_label == "door") {
+			description << "go through the door facing "
+						<< e_dir << " and saying \"" << tgt_name << "\". ";
+		} else {
+			if(e_label == "STAIRS") {
+				description << "take the stairs " << e_dir;
+				changedFloor = true;
+			} else if(e_label == "CONNECTED") {
+				description << "go " << e_dir;
+			} else {
+				description << "EDGE_UNKNOWN ";
+			}
+			description << " to get to the " << tgt_name;
+
+			if(changedFloor) {
+				description << " in the " << floor_name;
+			}
+
+			description << ". ";
+		}
+
+		result = neo4j_fetch_next(results);
+	}
+
+	neo4j_close_results(results);
+
+	return description.str();
+}
+
 Eigen::Vector3f GraphMap::getRoomCenter() const {
 	const unsigned int numEntries = 1;
 	neo4j_map_entry_t entries[numEntries];
@@ -870,6 +1028,13 @@ neo4j_result_stream_t* GraphMap::execResultQuery(neo4j_connection_t* conn,
 	}
 
 	return results;
+}
+
+std::string GraphMap::neo4jValue2String(const neo4j_value_t& val) {
+	char buf[64];
+	neo4j_tostring(val, buf, sizeof(buf));
+	std::string s(buf+1, std::strlen(buf)-2);
+	return s;
 }
 
 std::string GraphMap::color2Str(const cv::Scalar& c) {
