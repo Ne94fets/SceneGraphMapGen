@@ -514,7 +514,11 @@ void SUNRGBDEval::writeOutputs() {
 	for(const auto& pair : m_rmsePerCategory) {
 		rmseFile << "\"" << Detection::getTypeName(pair.first) << "\":[";
 		for(size_t i = 0; i < pair.second.size(); ++i) {
-			rmseFile << pair.second[i];
+			auto dist = pair.second[i];
+			if(!std::isfinite(dist)) {
+				continue;
+			}
+			rmseFile << dist;
 			if(i != pair.second.size()-1) {
 				rmseFile << ",";
 			}
