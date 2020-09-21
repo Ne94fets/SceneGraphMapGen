@@ -23,13 +23,13 @@ Software downloaded by the cmake script:
 
 ## How to build
 Run
-´´´
+```
 git clone https://github.com/Ne94fets/SceneGraphMapGen.git
 mkdir build
 cd build
 cmake ../
 make
-´´´
+```
 
 Instead of running cmake you can also import the CMakeLists.txt in your favourite Editor, like qtcreator.
 
