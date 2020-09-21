@@ -388,7 +388,10 @@ void ObjectRecognition3d::trackLastDetections(const ChannelPair& pair) {
 			auto normalized = Detection::normalizeBox(img.size(), box);
 
 			// make sure unexpected growth is not too greate, since not moving that fast
-			assert(normalized.area()/d.box.area() <= 2);
+			if(normalized.area()/d.box.area() <= 2) {
+				std::cout << "Tracked object #" << i << " growed too fast" << std::endl;
+				continue;
+			}
 
 			updateDetectionBox(d, pair, normalized, m_calcPositionBuffer);
 
@@ -777,7 +780,7 @@ cv::Point3f ObjectRecognition3d::calcPosition(const ChannelPair& pair,
 		for(float fc = xmin; fc < xmax; fc+=xStep) {
 			int c = static_cast<int>(fc);
 			float depth = depthRow[c];
-			if(std::isfinite(depth) && depth > 0) {
+			if(std::isfinite(depth) && depth > 0.001f) {
 				calcPosBuffer.push_back({c, r, depth});
 #if DEBUG_POS_HIST
 				size_t bin = static_cast<size_t>(std::round(depth / binSize));
