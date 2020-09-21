@@ -1,5 +1,5 @@
 # Object Detection and Object Position Estimation Evaluation
-Put SUNRGBD kinect v2 data set here.
+Put SUNRGBD kinect v2 data set into this directory.
 
 Then run in project directory:
 ```
