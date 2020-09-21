@@ -52,6 +52,8 @@
 #include <recognitiondatatypes/Detection.h>
 
 #include <sstream>
+
+// robot has old gcc need to use experimental here
 #include <filesystem>
 namespace fs = std::filesystem;
 
@@ -139,7 +141,7 @@ private:
 	RGBImgType				m_rgb;
 	DepthImgType			m_depth;
 
-	std::filesystem::directory_iterator	m_dirIter;
+	fs::directory_iterator	m_dirIter;
 
 	Channel<RegistrationData>	m_channelRegistrationData;
 	Channel<RGBImgType>			m_channelRGBFull;	// uchar range: [0,255]
@@ -206,11 +208,11 @@ void SUNRGBDEval::process(const Timer& timer) {
 		m_dirIter = fs::directory_iterator(m_path2DataSet);
 	}
 
-	while(m_dirIter != std::filesystem::end(m_dirIter) && !m_dirIter->is_directory()) {
+	while(m_dirIter != fs::end(m_dirIter) && !fs::is_directory(m_dirIter->path())) {
 		++m_dirIter;
 	}
 
-	if(m_dirIter == std::filesystem::end(m_dirIter)) {
+	if(m_dirIter == fs::end(m_dirIter)) {
 		m_start = false;
 		m_initRound = false;
 		writeOutputs();
@@ -506,42 +508,23 @@ void SUNRGBDEval::writeOutputs() {
 	rapidjson::Writer<rapidjson::OStreamWrapper> detWriter(detFWS);
 	m_detDoc.Accept(detWriter);
 
-	rapidjson::Document rmseDoc;
-	rmseDoc.SetObject();
-
-	rapidjson::Document::AllocatorType& rmseAlloc = rmseDoc.GetAllocator();
-
-	for(const auto& pair : m_rmsePerCategory) {
-		rapidjson::Value dists(rapidjson::kArrayType);
-
-		for(auto dist : pair.second) {
-			dists.PushBack(rapidjson::Value().SetFloat(dist), rmseAlloc);
-		}
-
-		const std::string& category = Detection::getTypeName(pair.first);
-		rapidjson::Value catValue(category.c_str(), category.length(), rmseAlloc);
-		rmseDoc.AddMember(catValue, dists, rmseAlloc);
-	}
-
-	class StringHolder
-	  {
-	  public:
-		typedef char Ch;
-		StringHolder(std::string& s) : s_(s) { s_.reserve(4096); }
-		void Put(char c) { s_.push_back(c); }
-		void Flush() { return; }
-
-	  private:
-		std::string& s_;
-	  };
-
-	std::string out;
-	StringHolder rmseFWS(out);
-	rapidjson::Writer<StringHolder> rmseWriter(rmseFWS);
-	rmseDoc.Accept(rmseWriter);
 	std::ofstream rmseFile(m_path2DataSet + "/rmse.json");
-	rmseFile << out;
-	if(!rmseFile.good()) throw std::runtime_error("Cannot write to file");
+	rmseFile << "{";
+	size_t cnt = 0;
+	for(const auto& pair : m_rmsePerCategory) {
+		rmseFile << "\"" << Detection::getTypeName(pair.first) << "\":[";
+		for(size_t i = 0; i < pair.second.size(); ++i) {
+			rmseFile << pair.second[i];
+			if(i != pair.second.size()-1) {
+				rmseFile << ",";
+			}
+		}
+		rmseFile << "]";
+		if(cnt++ != m_rmsePerCategory.size()-1) {
+			rmseFile << ",";
+		}
+	}
+	rmseFile << "}";
 	rmseFile.close();
 }
 
@@ -569,33 +552,33 @@ int SUNRGBDEval::SUNRGBDname2typeID(const std::string& name) {
 }
 
 std::unordered_map<std::string, int> SUNRGBDEval::m_SUNRGBDName2COCOIDMap = {
-	{"bench", 15},
-	{"chair", 62},
 	{"bed", 65},
-	{"door", 71},
-	{"monitor", 72},
-	{"toilet", 70},
-	{"urinal", 70},
-	{"sink", 81},
+	{"bench", 15},
+	{"book", 84},
+	{"chair", 62},
+	{"stool", 62},
+	{"sofa_chair", 62}, // 63 => 0.205, // 62 => 0.233
 	{"sofa", 63},
-	{"table", 67},
-	{"dining_table", 67},
-	{"person", 1},
 	{"desk", 69},
-	{"flower_pot", 64},
+	{"dining_table", 67},
+	{"endtable", 67},
+	{"table", 67},
+	{"door", 71},
 	{"keyboard", 76},
 	{"microwave", 78},
-	{"oven", 79},
-	{"fridge", 82},
-	{"tv", 72},	// 0.237
-	{"book", 84},
 	{"mouse", 74},
-	{"plants", 64},
+	{"oven", 79},
+	{"person", 1},
+	{"flower_pot", 64},
+	{"flower_vase", 64},
 	{"plant", 64},
-	{"flower_vase", 86}, // 0.233
-	{"sofa_chair", 62}, // 63 => 0.205, // 62 => 0.233
-	{"endtable", 67},
-	{"stool", 62},
+	{"plants", 64},
+	{"sink", 81},
+	{"toilet", 70},
+	{"urinal", 70},
+	{"monitor", 72},
+	{"tv", 72},
+	{"fridge", 82},
 };
 
 ///////////////////////////////////////////////////////////////////////////////
