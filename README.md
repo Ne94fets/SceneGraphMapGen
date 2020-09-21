@@ -20,3 +20,21 @@ Software downloaded by the cmake script:
 - PCL
 - libfreenect2
 - rapidjson (for evaluation only)
+
+## How to build
+Run
+´´´
+git clone https://github.com/Ne94fets/SceneGraphMapGen.git
+mkdir build
+cd build
+cmake ../
+make
+´´´
+
+Instead of running cmake you can also import the CMakeLists.txt in your favourite Editor, like qtcreator.
+
+## How to Evaluate the Camera Pose Estimation
+see [here](external/evalData/PUTK/README.md)
+
+## How to Evaluate Object Detection and Object Position Estimation
+see [here](external/evalData/SUNRGBD-EvalScripts/README.md)
