@@ -1,5 +1,5 @@
 # SLAM Evaluation
-Put PUTK data set here. The directory structure should look like:
+Put [PUTK data set](http://lrm.put.poznan.pl/putkk/) here. The directory structure should look like:
 ```
 ./set/Dataset_*_Kin_2
 ```
