@@ -71,6 +71,8 @@ Thumbs.db
 # --------
 *.dll
 *.exe
+*.tape
+*.7z
 
 /build
 /doc
@@ -89,3 +91,6 @@ Thumbs.db
 
 model.pb
 PackageList.txt
+ObjRecDetectTimes.txt
+ObjRecTrackTimes.txt
+PCLTrackTimes.txt

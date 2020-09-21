@@ -1,0 +1,13 @@
+absl
+bazel
+libfreenect2
+libneo4j-client
+models/YOLO
+neo4j
+opencv
+opencv_contrib
+pcl
+protobuf
+rapidjson
+tensorflow
+

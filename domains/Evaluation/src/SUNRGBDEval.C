@@ -508,7 +508,7 @@ void SUNRGBDEval::writeOutputs() {
 	rapidjson::Writer<rapidjson::OStreamWrapper> detWriter(detFWS);
 	m_detDoc.Accept(detWriter);
 
-	std::ofstream rmseFile(m_path2DataSet + "/rmse.json");
+	std::ofstream rmseFile(m_path2DataSet + "/rmse200.json");
 	rmseFile << "{";
 	size_t cnt = 0;
 	for(const auto& pair : m_rmsePerCategory) {

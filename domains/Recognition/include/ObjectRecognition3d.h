@@ -187,7 +187,7 @@ private:
 
 	float	m_overlappingThreshold = 0.5f;
 	float	m_confidenceThreshold = 0.5f;
-	int		m_sampleGridSize = 100;
+	int		m_sampleGridSize = 200;
 	bool	m_detectUsingYOLO = false;
 
 	RGBImgType						m_currentRGBMarked;
