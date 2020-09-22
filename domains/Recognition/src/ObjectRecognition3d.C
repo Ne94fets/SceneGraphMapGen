@@ -387,12 +387,6 @@ void ObjectRecognition3d::trackLastDetections(const ChannelPair& pair) {
 			// update detection
 			auto normalized = Detection::normalizeBox(img.size(), box);
 
-			// make sure unexpected growth is not too greate, since not moving that fast
-			if(normalized.area()/d.box.area() <= 2) {
-				std::cout << "Tracked object #" << i << " growed too fast" << std::endl;
-				continue;
-			}
-
 			updateDetectionBox(d, pair, normalized, m_calcPositionBuffer);
 
 			// swap detection and tracker to front
