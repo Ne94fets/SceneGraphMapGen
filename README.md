@@ -21,6 +21,10 @@ Software downloaded by the cmake script:
 - libfreenect2
 - rapidjson (for evaluation only)
 
+Neural network models:
+- R-CNN model is provided
+- YOLO (optional) download v3 .cfg-file [here](https://github.com/opencv/opencv_extra/tree/master/testdata/dnn) and .weights [here](https://pjreddie.com/darknet/yolo/)
+
 ## How to build
 Run
 ```
