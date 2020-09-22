@@ -23,7 +23,7 @@ Software downloaded by the cmake script:
 
 Neural network models:
 - R-CNN model is provided
-- YOLO (optional) download v3 .cfg-file [here](https://github.com/opencv/opencv_extra/tree/master/testdata/dnn) and .weights [here](https://pjreddie.com/darknet/yolo/)
+- YOLO (optional) download v3 .cfg-file [here](https://github.com/opencv/opencv_extra/tree/master/testdata/dnn) and .weights [here](https://pjreddie.com/darknet/yolo/), put files into `external/models/YOLO`
 
 ## How to build
 Run
