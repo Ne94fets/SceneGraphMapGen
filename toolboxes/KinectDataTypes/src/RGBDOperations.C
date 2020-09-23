@@ -57,8 +57,8 @@ bool RGBDOperations::getRowCol(const float x, const float y, const float z,
 		return false;
 	}
 
-	r = -(z / fracfy / y) + cy - 0.5;
-	c = (x / fracfx / y) + cx - 0.5;
+	r = -(z / fracfy / y) + cy - 0.5f;
+	c = (x / fracfx / y) + cx - 0.5f;
 	return true;
 }
 

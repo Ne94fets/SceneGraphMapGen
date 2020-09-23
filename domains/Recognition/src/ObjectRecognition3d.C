@@ -206,7 +206,7 @@ void ObjectRecognition3d::onNewDepthImage(
 
 void ObjectRecognition3d::onGlobalCameraPose(ChannelRead<TransformType> globalPose) {
 	m_camera2World = *globalPose;
-	m_world2Camera = m_camera2World.inverse();
+	m_world2Camera = m_camera2World.transpose();
 }
 
 void ObjectRecognition3d::process() {
@@ -1152,7 +1152,7 @@ void ObjectRecognition3d::drawAABB(cv::Mat& img, const Detection& d,
 	imgPoints.reserve(8);
 
 	for(const auto& p : boxPoints) {
-		auto tp = world2Camera * Eigen::Vector4f(p.x, p.y, p.z, 1);
+		Eigen::Vector4f tp = world2Camera * Eigen::Vector4f(p.x, p.y, p.z, 1);
 		cv::Point2f imgP;
 		if(!RGBDOperations::getRowCol(tp.x(), tp.y(), tp.z(), cx, cy, fracfx, fracfy, imgP.y, imgP.x)) {
 			return;
